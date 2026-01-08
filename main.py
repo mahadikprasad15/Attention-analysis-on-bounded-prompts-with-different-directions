@@ -2,6 +2,9 @@
 # MAIN EXECUTION
 # ============================================================================
 import torch
+import argparse
+import os
+import pickle
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
 from src.config import Config
@@ -13,9 +16,35 @@ from src.evaluation.baseline import BaselineEvaluator
 from src.evaluation.intervention import AttentionInterventionEvaluator
 from src.analysis.visualization import ResultAnalyzer
 
+def save_probes(save_dir, harm_probe, refusal_probe, harm_layer):
+    os.makedirs(save_dir, exist_ok=True)
+    with open(os.path.join(save_dir, 'probes.pkl'), 'wb') as f:
+        pickle.dump({
+            'harm_probe': harm_probe,
+            'refusal_probe': refusal_probe,
+            'harm_layer': harm_layer
+        }, f)
+    print(f"Saved probes to {save_dir}/probes.pkl")
+
+def load_probes(save_dir):
+    path = os.path.join(save_dir, 'probes.pkl')
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"No probes found at {path}. Run --step train first.")
+    with open(path, 'rb') as f:
+        data = pickle.load(f)
+    print(f"Loaded probes from {path}")
+    return data['harm_probe'], data['refusal_probe'], data['harm_layer']
+
 def main():
     """Complete experimental pipeline"""
-    
+    parser = argparse.ArgumentParser(description="LLM Attention Analysis Pipeline")
+    parser.add_argument("--model_name", type=str, default=None, help="Model name (overrides config)")
+    parser.add_argument("--step", type=str, default="all", choices=["all", "train", "evaluate"], help="Step to run")
+    parser.add_argument("--save_dir", type=str, default="experiments/checkpoints", help="Directory to save/load probes")
+    parser.add_argument("--n_samples", type=int, default=50, help="Number of samples to use")
+    parser.add_argument("--device", type=str, default=None, help="Device to use (cuda/cpu/mps)")
+    args = parser.parse_args()
+
     # ========================================================================
     # STEP 1: SETUP
     # ========================================================================
@@ -24,7 +53,11 @@ def main():
     print("="*70)
     
     config = Config()
-    
+    if args.model_name:
+        config.model_name = args.model_name
+    if args.device:
+        config.device = args.device
+
     # Load model
     print(f"Loading {config.model_name}...")
     
@@ -54,42 +87,60 @@ def main():
         tokenizer.pad_token = tokenizer.eos_token
     
     # Load data
-    harmful_instructions = load_harmful_instructions()[:50]  # Start with 50
-    harmless_instructions = load_harmless_instructions()[:50]
+    harmful_instructions = load_harmful_instructions()[:args.n_samples]
+    harmless_instructions = load_harmless_instructions()[:args.n_samples]
     
     print(f"✓ Loaded {len(harmful_instructions)} harmful and {len(harmless_instructions)} harmless instructions")
     
+    formatter = PromptFormatter(tokenizer, template_style=config.template_style)
+    collector = ActivationCollector(model, tokenizer, formatter)
+
+    harm_probe = None
+    refusal_probe = None
+    harm_layer = None
+
     # ========================================================================
     # STEP 2: TRAIN PROBES
     # ========================================================================
-    print("\n" + "="*70)
-    print("STEP 2: TRAINING PROBES")
-    print("="*70)
-    
-    formatter = PromptFormatter(tokenizer, template_style=config.template_style)
-    collector = ActivationCollector(model, tokenizer, formatter)
-    trainer = ProbeTrainer(collector, formatter)
-    
-    # Train harmfulness probe
-    harm_layer, harm_probe, harm_results = trainer.train_harmfulness_probe(
-        harmful_instructions,
-        harmless_instructions,
-        search_all_layers=True
-    )
-    
-    # Train refusal probe
-    # Note: Refusal probe training requires generation, so it's slower.
-    refusal_probe = trainer.train_refusal_probe(
-        harmful_instructions,
-        layer_idx=-1
-    )
-    
-    # Check orthogonality
-    cos_sim = (harm_probe.direction @ refusal_probe.direction) / (
-        harm_probe.direction.norm() * refusal_probe.direction.norm()
-    )
-    print(f"\n✓ Direction correlation: {cos_sim:.3f}")
-    
+    if args.step in ["all", "train"]:
+        print("\n" + "="*70)
+        print("STEP 2: TRAINING PROBES")
+        print("="*70)
+        
+        trainer = ProbeTrainer(collector, formatter)
+        
+        # Train harmfulness probe
+        harm_layer, harm_probe, harm_results = trainer.train_harmfulness_probe(
+            harmful_instructions,
+            harmless_instructions,
+            search_all_layers=True
+        )
+        
+        # Train refusal probe
+        # Note: Refusal probe training requires generation, so it's slower.
+        refusal_probe = trainer.train_refusal_probe(
+            harmful_instructions,
+            layer_idx=-1
+        )
+        
+        # Check orthogonality
+        if harm_probe.direction is not None and refusal_probe.direction is not None:
+            cos_sim = (harm_probe.direction @ refusal_probe.direction) / (
+                harm_probe.direction.norm() * refusal_probe.direction.norm()
+            )
+            print(f"\n✓ Direction correlation: {cos_sim:.3f}")
+        
+        # Save probes
+        save_probes(args.save_dir, harm_probe, refusal_probe, harm_layer)
+
+    if args.step == "train":
+        print("\nTraining complete. Exiting...")
+        return
+
+    # Load probes if skipping training
+    if args.step == "evaluate" and harm_probe is None:
+        harm_probe, refusal_probe, harm_layer = load_probes(args.save_dir)
+
     # ========================================================================
     # STEP 3: CREATE JAILBREAK DATASET
     # ========================================================================
@@ -97,7 +148,10 @@ def main():
     print("STEP 3: CREATING JAILBREAK DATASET")
     print("="*70)
     
-    test_instructions = harmful_instructions[:20]  # Test subset
+    # Use a subset for testing (e.g., 40% of loaded samples)
+    test_n = max(1, int(len(harmful_instructions) * 0.4))
+    test_instructions = harmful_instructions[:test_n]
+    print(f"Using {len(test_instructions)} samples for evaluation")
     
     datasets = {
         'R': [],  # Refusal
