@@ -111,6 +111,10 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
                     # Now we definitely have a 4D mask - clone and modify
                     mod_mask = attention_mask.clone()
 
+                    # CRITICAL: Ensure mask dtype matches hidden_states dtype
+                    if mod_mask.dtype != hidden_states.dtype:
+                        mod_mask = mod_mask.to(hidden_states.dtype)
+
                     # Target indices
                     t_post_idx = positions.t_post
                     adv_start = positions.adv_start
@@ -118,7 +122,7 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
 
                     # INTERVENTION: Block attention from t_post to ADV tokens
                     # Set mask[:, :, t_post, adv_start:adv_end+1] = -inf
-                    min_val = torch.finfo(mod_mask.dtype).min
+                    min_val = torch.finfo(hidden_states.dtype).min  # Use hidden_states dtype
                     mod_mask[:, :, t_post_idx, adv_start:adv_end+1] = min_val
 
                     if layer_idx == 0:  # Only mark once per forward pass
