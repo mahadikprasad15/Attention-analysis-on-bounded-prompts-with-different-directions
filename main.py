@@ -121,37 +121,43 @@ def main():
         print("STEP 2: TRAINING PROBES")
         print("="*70)
         
-        trainer = ProbeTrainer(
-            collector, 
-            formatter,
-            use_llm_labeling=args.use_llm_labeling,
-            llm_labeler_config=llm_labeler_config
-        )
-        
-        # Train harmfulness probe
-        harm_layer, harm_probe, harm_results = trainer.train_harmfulness_probe(
-            harmful_instructions,
-            harmless_instructions,
-            search_all_layers=True
-        )
-        
-        # Train refusal probe
-        # Note: Refusal probe training requires generation, so it's slower.
-        refusal_probe = trainer.train_refusal_probe(
-            harmful_instructions,
-            harmless_instructions=harmless_instructions,
-            layer_idx=-1
-        )
-        
-        # Check orthogonality
-        if harm_probe.direction is not None and refusal_probe.direction is not None:
-            cos_sim = (harm_probe.direction @ refusal_probe.direction) / (
-                harm_probe.direction.norm() * refusal_probe.direction.norm()
+        probes_path = os.path.join(args.save_dir, 'probes.pkl')
+        if os.path.exists(probes_path):
+            print(f"Found existing probes at {probes_path}. Loading...")
+            harm_probe, refusal_probe, harm_layer = load_probes(args.save_dir)
+            print("✓ Probes loaded from cache. Skipping training.")
+        else:
+            trainer = ProbeTrainer(
+                collector, 
+                formatter,
+                use_llm_labeling=args.use_llm_labeling,
+                llm_labeler_config=llm_labeler_config
             )
-            print(f"\n✓ Direction correlation: {cos_sim:.3f}")
-        
-        # Save probes
-        save_probes(args.save_dir, harm_probe, refusal_probe, harm_layer)
+            
+            # Train harmfulness probe
+            harm_layer, harm_probe, harm_results = trainer.train_harmfulness_probe(
+                harmful_instructions,
+                harmless_instructions,
+                search_all_layers=True
+            )
+            
+            # Train refusal probe
+            # Note: Refusal probe training requires generation, so it's slower.
+            refusal_probe = trainer.train_refusal_probe(
+                harmful_instructions,
+                harmless_instructions=harmless_instructions,
+                layer_idx=-1
+            )
+            
+            # Check orthogonality
+            if harm_probe.direction is not None and refusal_probe.direction is not None:
+                cos_sim = (harm_probe.direction @ refusal_probe.direction) / (
+                    harm_probe.direction.norm() * refusal_probe.direction.norm()
+                )
+                print(f"\n✓ Direction correlation: {cos_sim:.3f}")
+            
+            # Save probes
+            save_probes(args.save_dir, harm_probe, refusal_probe, harm_layer)
 
     if args.step == "train":
         print("\nTraining complete. Exiting...")
