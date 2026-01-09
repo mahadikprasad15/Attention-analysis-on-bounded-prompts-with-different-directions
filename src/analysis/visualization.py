@@ -155,3 +155,53 @@ class ResultAnalyzer:
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         print(f"\n✓ Attention Plot saved to '{save_path}'")
+
+    @staticmethod
+    def plot_attention_breakdown_comparison(
+        refused_results: Dict[str, List[float]], 
+        complied_results: Dict[str, List[float]], 
+        save_path: str = 'attention_breakdown_comparison.png'
+    ):
+        """
+        Plot side-by-side comparison of attention patterns for Refused vs Complied groups.
+        """
+        labels = ['Instruction', 'Adv Suffix', 'System/Other']
+        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
+        
+        # Prepare data
+        ref_means = [np.mean(refused_results[k]) for k in keys]
+        ref_stds = [np.std(refused_results[k]) for k in keys]
+        
+        comp_means = [np.mean(complied_results[k]) for k in keys]
+        comp_stds = [np.std(complied_results[k]) for k in keys]
+        
+        x = np.arange(len(labels))
+        width = 0.35
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Bars
+        rects1 = ax.bar(x - width/2, ref_means, width, yerr=ref_stds, label='Refused (Success)', capsize=5, alpha=0.8, color='#2ecc71')
+        rects2 = ax.bar(x + width/2, comp_means, width, yerr=comp_stds, label='Complied (Failed)', capsize=5, alpha=0.8, color='#e74c3c')
+        
+        ax.set_ylabel('Attention Mass at t_post')
+        ax.set_title('Attention Distribution: Refused vs Complied (Top 3)')
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.legend()
+        ax.grid(True, axis='y', alpha=0.3)
+        
+        # Add values on top
+        def autolabel(rects):
+            for rect in rects:
+                height = rect.get_height()
+                ax.text(rect.get_x() + rect.get_width()/2., height,
+                        f'{height:.1%}',
+                        ha='center', va='bottom')
+
+        autolabel(rects1)
+        autolabel(rects2)
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"\n✓ Comparative Attention Plot saved to '{save_path}'")

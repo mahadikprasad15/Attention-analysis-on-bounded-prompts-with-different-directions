@@ -301,12 +301,89 @@ def main():
     print("ANALYZING ATTENTION PATTERNS (Jailbreak)")
     print("="*70)
     
+    
     attn_analyzer = AttentionAnalyzer(model, tokenizer, formatter)
     # Analyze Condition J (Jailbreak) where suffixes are present
     attn_results = attn_analyzer.get_attention_contributions(datasets['J'], layer_idx=-1) # Last layer
     
-    # Visualize
+    # Visualize Overall
     analyzer.plot_attention_contributions(attn_results, save_path=os.path.join(args.save_dir, 'attention_analysis.png'))
+    
+    # GRANULAR COMPARISON (Refused vs Complied after Intervention)
+    print("\n" + "="*70)
+    print("ANALYZING ATTENTION: REFUSED vs COMPLIED")
+    print("="*70)
+    
+    # 1. Identify "Refused" vs "Complied" from INTERVENTION results for 'J'
+    # We need the actual prompts corresponding to these outcomes
+    # intervened_results['J'] is a summary. We need the list 'j_intervened' from step 5.
+    # To do this cleanly without refactoring too much, let's look at 'j_intervened' list.
+    # But scope of j_intervened is local to loop.
+    # We need to make j_intervened available here.
+    # Simplest way: Re-generate or move logic up.
+    # Wait, 'j_intervened' is available if we are in the same scope, but previous code didn't save it.
+    
+    # Let's verify if j_intervened is accessible. In the previous code, j_intervened was a local list 
+    # inside the Step 5 block. If Step 5 and 6 are in 'main', and j_intervened is defined in main, it works.
+    # Looking at file content... yes, it is in main().
+    
+    if 'j_intervened' in locals():
+        # Sort by refusal score (higher = more likely refused)
+        # Or filter by binary 'actually_refuses'
+        
+        refused_samples = [res for res in j_intervened if res.actually_refuses]
+        complied_samples = [res for res in j_intervened if not res.actually_refuses]
+        
+        print(f"Found {len(refused_samples)} Refused and {len(complied_samples)} Complied samples in Condition J (Intervened).")
+        
+        if len(refused_samples) > 0 and len(complied_samples) > 0:
+            # Sort by refusal score confidence
+            refused_samples.sort(key=lambda x: x.refusal_score, reverse=True) # Highest refusal score
+            complied_samples.sort(key=lambda x: x.refusal_score) # Lowest refusal score (most compliant)
+            
+            # Take Top 3
+            top_refused = refused_samples[:3]
+            top_complied = complied_samples[:3]
+            
+            # Extract Prompts
+            # We need to map EvaluationResult back to Prompt object
+            # Or just recreate text? AttentionAnalyzer needs Prompt object or text.
+            # AttentionAnalyzer takes List[Prompt].
+            # Warning: EvaluationResult only has text strings.
+            # We need to find the original Prompt object from datasets['J'] that matches.
+            # This is O(N^2) but N=50 so it's fine.
+            
+            def get_prompts_from_results(results_list, all_prompts):
+                target_prompts = []
+                for res in results_list:
+                    # Find matching prompt in all_prompts
+                    for p in all_prompts:
+                        if p.instruction == res.instruction: # Match by instruction
+                            target_prompts.append(p)
+                            break
+                return target_prompts
+
+            prompts_refused = get_prompts_from_results(top_refused, datasets['J'])
+            prompts_complied = get_prompts_from_results(top_complied, datasets['J'])
+            
+            # Run Attention Analysis
+            print("Analyzing Top 3 Refused...")
+            attn_refused = attn_analyzer.get_attention_contributions(prompts_refused, layer_idx=-1)
+            
+            print("Analyzing Top 3 Complied...")
+            attn_complied = attn_analyzer.get_attention_contributions(prompts_complied, layer_idx=-1)
+            
+            # Plot Comparison
+            analyzer.plot_attention_breakdown_comparison(
+                attn_refused, 
+                attn_complied, 
+                save_path=os.path.join(args.save_dir, 'attention_breakdown_comparison.png')
+            )
+        else:
+            print("Skipping comparison: Need at least one Refused and one Complied sample.")
+            
+    else:
+        print("Warning: j_intervened results not found. Skipping granular analysis.")
     
     print("\n✓ COMPLETE!")
 
