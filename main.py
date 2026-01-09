@@ -84,14 +84,16 @@ def main():
             config.model_name,
             device_map="auto",
             torch_dtype=torch.float16,
-            trust_remote_code=True
+            trust_remote_code=True,
+            attn_implementation="eager"
         )
     except Exception as e:
         print(f"Failed to load with device_map='auto': {e}")
         print("Falling back to CPU/MPS loading...")
         model = AutoModelForCausalLM.from_pretrained(
             config.model_name,
-            trust_remote_code=True
+            trust_remote_code=True,
+            attn_implementation="eager"
         ).to(config.device)
 
     tokenizer = AutoTokenizer.from_pretrained(config.model_name)
