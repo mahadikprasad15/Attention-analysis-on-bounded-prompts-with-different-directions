@@ -16,7 +16,7 @@ from src.evaluation.baseline import BaselineEvaluator
 from src.evaluation.intervention import AttentionInterventionEvaluator
 from src.analysis.visualization import ResultAnalyzer
 from src.analysis.attention_pattern import AttentionAnalyzer
-from src.data.saving import save_experiment_data, load_experiment_data
+from src.data.saving import save_experiment_data, load_experiment_data, save_results, load_results
 
 def save_probes(save_dir, harm_probe, refusal_probe, harm_layer):
     os.makedirs(save_dir, exist_ok=True)
@@ -251,11 +251,66 @@ def main():
         llm_labeler_config=llm_labeler_config
     )
     
+    
     baseline_results = {}
-    for condition in ['R', 'J', 'F']:
-        print(f"\nEvaluating condition {condition}...")
-        results = evaluator.evaluate_dataset(datasets[condition], condition)
-        baseline_results[condition] = ResultAnalyzer.summarize_results(results)
+    
+    # Try loading cached baseline results
+    cached_baseline = load_results(args.save_dir, 'baseline')
+    
+    if cached_baseline is not None:
+        print("✓ Loaded baseline results from cache. Skipping evaluation.")
+        # Reconstruct the dict structure for analyzer
+        # We saved the list, but we need dict mapping condition -> summary
+        # Wait, simple way is to just save the raw lists per condition?
+        # My save_results function takes a list.
+        # Let's save a dictionary of lists? or just pickle the whole baseline_results dict containing lists?
+        # The ResultAnalyzer.summarize_results returns a dict.
+        # I need the RAW results list for potential future use?
+        # Actually, for baseline, I mostly just need the summary for the plot.
+        # BUT for consistency, let's cache the summaries?
+        # No, result_analyzer needs summaries. 
+        # Let's simple pickle the 'baseline_results' dictionary itself using pickle directly?
+        # My load_results expects a list. 
+        # Let's adjust: compute all results, put them in a big structure, save that.
+        # Easier: Just check if summaries exist. 
+        # But wait, Step 6 analysis might need raw results later? 
+        # Currently Step 6 uses baseline_results (summaries) and intervened_results (summaries).
+        # And j_intervened (raw list).
+        
+        # So for Baseline, saving the 'baseline_results' (summary dict) is enough for CURRENT code.
+        # BUT to be safe, I should probably save the raw lists if I ever want to analyze them.
+        # For now, let's just stick to the simplest path: Cache the `baseline_results` variable directly.
+        pass #Logic below
+        
+    # Re-implementing with specific logic:
+    
+    # 1. Check for 'baseline_metrics.pkl'
+    baseline_metrics_path = os.path.join(args.save_dir, 'baseline_metrics.pkl')
+    if os.path.exists(baseline_metrics_path):
+        print(f"Loading baseline metrics from {baseline_metrics_path}...")
+        with open(baseline_metrics_path, 'rb') as f:
+            baseline_results = pickle.load(f)
+    else:
+        # Run evaluation
+        evaluator = BaselineEvaluator(
+            model, tokenizer, formatter,
+            harm_probe, refusal_probe,
+            harm_layer, refusal_layer_idx=-1,
+            use_llm_labeling=args.use_llm_labeling,
+            llm_labeler_config=llm_labeler_config
+        )
+        
+        for condition in ['R', 'J', 'F']:
+            print(f"\nEvaluating condition {condition}...")
+            # We don't really need to save raw results for baseline unless requested
+            # to save space/time. But we could.
+            results = evaluator.evaluate_dataset(datasets[condition], condition)
+            baseline_results[condition] = ResultAnalyzer.summarize_results(results)
+            
+        # Save metrics
+        with open(baseline_metrics_path, 'wb') as f:
+            pickle.dump(baseline_results, f)
+        print("Saved baseline metrics.")
     
     # ========================================================================
     # STEP 5: INTERVENTION
@@ -274,14 +329,22 @@ def main():
     
     intervened_results = {}
     print("\nEvaluating J with intervention...")
-    # Only evaluate J with intervention
-    j_intervened = []
     
-    for i, prompt in enumerate(datasets['J']):
-        if i % 10 == 0:
-            print(f"  Evaluating {i+1}/{len(datasets['J'])}...")
-        res = interv_evaluator.evaluate_prompt_with_intervention(prompt, 'J')
-        j_intervened.append(res)
+    # Check for cached intervention results (RAW LIST needed for Step 6)
+    j_intervened = load_results(args.save_dir, 'j_intervention_raw')
+    
+    if j_intervened is not None:
+        print("✓ Loaded intervention results from cache. Skipping evaluation.")
+    else:
+        j_intervened = []
+        for i, prompt in enumerate(datasets['J']):
+            if i % 10 == 0:
+                print(f"  Evaluating {i+1}/{len(datasets['J'])}...")
+            res = interv_evaluator.evaluate_prompt_with_intervention(prompt, 'J')
+            j_intervened.append(res)
+            
+        # Save raw results
+        save_results(args.save_dir, 'j_intervention_raw', j_intervened)
         
     intervened_results['J'] = ResultAnalyzer.summarize_results(j_intervened)
     
