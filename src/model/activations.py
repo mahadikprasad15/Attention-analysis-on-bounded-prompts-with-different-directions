@@ -50,8 +50,12 @@ class ActivationCollector:
             saved_activation = {}
             
             def hook_fn(module, input, output):
-                # output[0] is hidden states: [batch, seq_len, hidden_dim]
-                saved_activation['hidden'] = output[0].detach()
+                # Handle both tuple (hidden_states, ...) and tensor output
+                if isinstance(output, tuple):
+                    hidden_states = output[0]
+                else:
+                    hidden_states = output
+                saved_activation['hidden'] = hidden_states.detach()
             
             # Register hook
             hook = self.model.model.layers[layer_idx].register_forward_hook(hook_fn)
@@ -66,6 +70,7 @@ class ActivationCollector:
             
             # Extract at target position
             # Note: target_pos is int, assume batch size 1
+            # hidden_states is [batch, seq_len, hidden_dim]
             act = saved_activation['hidden'][0, target_pos, :].cpu()
             activations.append(act)
         
@@ -105,7 +110,10 @@ class ActivationCollector:
             for layer_idx in range(self.n_layers):
                 def make_hook(idx):
                     def hook_fn(module, input, output):
-                        layer_activations[idx] = output[0].detach()
+                        if isinstance(output, tuple):
+                            layer_activations[idx] = output[0].detach()
+                        else:
+                            layer_activations[idx] = output.detach()
                     return hook_fn
                 
                 hook = self.model.model.layers[layer_idx].register_forward_hook(
@@ -124,6 +132,7 @@ class ActivationCollector:
             
             # Extract from each layer
             for layer_idx in range(self.n_layers):
+                # layer_activations[layer_idx] is [batch, seq_len, hidden_dim]
                 act = layer_activations[layer_idx][0, target_pos, :].cpu()
                 activations_by_layer[layer_idx].append(act)
         
