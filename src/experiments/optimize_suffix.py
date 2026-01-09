@@ -13,6 +13,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
 from src.config import Config
 from src.data.loader import load_harmful_instructions
+from src.data.saving import load_experiment_data
 from src.data.formatting import PromptFormatter
 from src.evaluation.refusal_labeler import RefusalLabeler
 
@@ -93,6 +94,10 @@ def main():
     parser.add_argument("--llm_model", type=str, default="llama3.1-8b")
     parser.add_argument("--custom_suffix", type=str, action="append", help="Custom suffix to test. Can be used multiple times.")
     
+    # Data loading args
+    parser.add_argument("--load_dir", type=str, default=None, help="Directory to load saved experiment prompts from")
+    parser.add_argument("--load_name", type=str, default=None, help="Name prefix of saved experiment (e.g. 'J')")
+    
     args = parser.parse_args()
     
     print("="*60)
@@ -129,8 +134,19 @@ def main():
     ).to(args.device)
     
     # Load Data
-    instructions = load_harmful_instructions()
-    print(f"Loaded {len(instructions)} harmful instructions")
+    if args.load_dir and args.load_name:
+        print(f"Loading prompts from {args.load_dir} with prefix {args.load_name}...")
+        prompts, _ = load_experiment_data(args.load_dir, args.load_name)
+        if prompts:
+            # Extract instructions
+            instructions = [p.instruction for p in prompts]
+            print(f"Loaded {len(instructions)} instructions from saved experiment.")
+        else:
+            print("Failed to load saved data. Falling back to default CSV.")
+            instructions = load_harmful_instructions()
+    else:
+        instructions = load_harmful_instructions()
+        print(f"Loaded {len(instructions)} harmful instructions from CSV")
     
     formatter = PromptFormatter(tokenizer, template_style="llama3") # Defaulting, maybe make arg
     
