@@ -50,4 +50,7 @@ class LinearProbe:
         """
         if not self.is_fitted:
             raise ValueError("Probe not fitted yet!")
-        return (activation @ self.direction).item()
+        
+        # Cast activation to same dtype as direction to avoid Half/Float mismatch
+        # Activation comes from model (might be float16), direction is float32
+        return (activation.to(self.direction.dtype) @ self.direction).item()
