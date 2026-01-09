@@ -30,7 +30,7 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
         def make_patched_forward(layer_idx):
             original_fwd = original_forwards[layer_idx]
             
-            def patched_forward(hidden_states, attention_mask=None, position_ids=None, past_key_value=None, **kwargs):
+            def patched_forward(hidden_states, attention_mask=None, **kwargs):
                 # Check if we are in the prefill phase (full sequence)
                 # hidden_states: [batch, seq_len, dim]
                 seq_len = hidden_states.shape[1]
@@ -62,10 +62,10 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
                         min_val = torch.finfo(mod_mask.dtype).min
                         mod_mask[:, :, t_post_idx, adv_start:adv_end+1] = min_val
                         
-                        return original_fwd(hidden_states, attention_mask=mod_mask, position_ids=position_ids, past_key_value=past_key_value, **kwargs)
+                        return original_fwd(hidden_states, attention_mask=mod_mask, **kwargs)
                 
                 # Default behavior for generation steps or mismatched lengths
-                return original_fwd(hidden_states, attention_mask, position_ids, past_key_value, **kwargs)
+                return original_fwd(hidden_states, attention_mask=attention_mask, **kwargs)
             
             return patched_forward
 
