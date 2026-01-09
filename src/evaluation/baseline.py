@@ -60,7 +60,11 @@ class BaselineEvaluator:
         
         def make_hook(layer_idx, key):
             def hook_fn(module, input, output):
-                saved_activations[key] = output[0].detach()
+                if isinstance(output, tuple):
+                    hidden_states = output[0]
+                else:
+                    hidden_states = output
+                saved_activations[key] = hidden_states.detach()
             return hook_fn
         
         # Hook both layers
