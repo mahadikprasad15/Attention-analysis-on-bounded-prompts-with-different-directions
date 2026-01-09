@@ -254,36 +254,6 @@ def main():
     
     baseline_results = {}
     
-    # Try loading cached baseline results
-    cached_baseline = load_results(args.save_dir, 'baseline')
-    
-    if cached_baseline is not None:
-        print("✓ Loaded baseline results from cache. Skipping evaluation.")
-        # Reconstruct the dict structure for analyzer
-        # We saved the list, but we need dict mapping condition -> summary
-        # Wait, simple way is to just save the raw lists per condition?
-        # My save_results function takes a list.
-        # Let's save a dictionary of lists? or just pickle the whole baseline_results dict containing lists?
-        # The ResultAnalyzer.summarize_results returns a dict.
-        # I need the RAW results list for potential future use?
-        # Actually, for baseline, I mostly just need the summary for the plot.
-        # BUT for consistency, let's cache the summaries?
-        # No, result_analyzer needs summaries. 
-        # Let's simple pickle the 'baseline_results' dictionary itself using pickle directly?
-        # My load_results expects a list. 
-        # Let's adjust: compute all results, put them in a big structure, save that.
-        # Easier: Just check if summaries exist. 
-        # But wait, Step 6 analysis might need raw results later? 
-        # Currently Step 6 uses baseline_results (summaries) and intervened_results (summaries).
-        # And j_intervened (raw list).
-        
-        # So for Baseline, saving the 'baseline_results' (summary dict) is enough for CURRENT code.
-        # BUT to be safe, I should probably save the raw lists if I ever want to analyze them.
-        # For now, let's just stick to the simplest path: Cache the `baseline_results` variable directly.
-        pass #Logic below
-        
-    # Re-implementing with specific logic:
-    
     # 1. Check for 'baseline_metrics.pkl'
     baseline_metrics_path = os.path.join(args.save_dir, 'baseline_metrics.pkl')
     if os.path.exists(baseline_metrics_path):
