@@ -41,17 +41,27 @@ class PromptFormatter:
             template_style=self.template_style
         )
     
-    def get_positions(self, prompt: Prompt) -> TokenPositions:
+    def get_positions(self, prompt: Prompt, debug: bool = False) -> TokenPositions:
         """
         Find token positions for key locations in prompt
-        
+
         Args:
             prompt: Formatted prompt
-        
+            debug: If True, print detailed position information
+
         Returns:
             TokenPositions with all key indices
         """
         tokens = self.tokenizer.encode(prompt.text, add_special_tokens=False)
+
+        if debug:
+            print("\n" + "="*80)
+            print("DEBUG: Position Finding")
+            print("="*80)
+            print(f"Full prompt text:\n{prompt.text}")
+            print(f"\nHas adversarial suffix: {prompt.has_adv}")
+            if prompt.has_adv:
+                print(f"Adversarial suffix: '{prompt.adv_suffix}'")
         
         # Find marker tokens
         user_end_tokens = self.tokenizer.encode(
@@ -82,25 +92,54 @@ class PromptFormatter:
             raise ValueError(f"Could not find user_end marker in prompt. Tokens: {tokens[:10]}...")
         
         # Define positions
-        # t_inst is the last token of the instruction content (or adv suffix)
-        # So it is the token right before user_end
-        t_inst_pos = user_end_pos - 1
-        
+        # CRITICAL: We need to distinguish between:
+        # 1. t_inst_instruction: Last token of the INSTRUCTION ONLY (for harmfulness probe)
+        # 2. t_inst_final: Last token before user_end (may include adv suffix)
+
+        # First, find where instruction ends (without suffix)
+        prefix_str = self.template['user_start'] + prompt.instruction
+        prefix_tokens = self.tokenizer.encode(prefix_str, add_special_tokens=False)
+
+        # The last token of instruction only (before any space or suffix)
+        t_inst_instruction = len(prefix_tokens) - 1
+
+        # The last token before user_end marker (includes suffix if present)
+        t_inst_final = user_end_pos - 1
+
         positions = TokenPositions(
-            t_inst=t_inst_pos,
+            t_inst=t_inst_instruction,  # Use instruction-only position for harmfulness probe
             t_post=len(tokens) - 1,    # Last token of prompt
             total_length=len(tokens)
         )
-        
+
         # If adversarial suffix is present, mark those positions
         if prompt.has_adv:
-            # We need to find where instruction ends and ADV starts
-            # Tokenize user_start + instruction
-            prefix_str = self.template['user_start'] + prompt.instruction
-            prefix_tokens = self.tokenizer.encode(prefix_str, add_special_tokens=False)
-            
-            # adv starts right after instruction
-            positions.adv_start = len(prefix_tokens)
-            positions.adv_end = t_inst_pos
-            
+            # adv starts right after instruction (usually includes a space token)
+            positions.adv_start = len(prefix_tokens)  # First token after instruction
+            positions.adv_end = t_inst_final  # Last token before user_end
+
+        if debug:
+            print(f"\nToken count: {len(tokens)}")
+            print(f"\nTokenized sequence (first 20 tokens):")
+            for i, tok_id in enumerate(tokens[:20]):
+                tok_str = self.tokenizer.decode([tok_id])
+                print(f"  [{i:3d}] {tok_id:6d} → '{tok_str}'")
+
+            if len(tokens) > 20:
+                print(f"  ... ({len(tokens) - 20} more tokens)")
+
+            print(f"\nKey positions:")
+            print(f"  t_inst (instruction end): {positions.t_inst}")
+            print(f"    → Token: '{self.tokenizer.decode([tokens[positions.t_inst]])}'")
+            print(f"  t_post (prompt end): {positions.t_post}")
+            print(f"    → Token: '{self.tokenizer.decode([tokens[positions.t_post]])}'")
+
+            if prompt.has_adv:
+                print(f"  adv_start: {positions.adv_start}")
+                print(f"  adv_end: {positions.adv_end}")
+                print(f"    → ADV tokens: '{self.tokenizer.decode(tokens[positions.adv_start:positions.adv_end+1])}'")
+                print(f"    → Expected: '{prompt.adv_suffix}'")
+
+            print("="*80 + "\n")
+
         return positions
