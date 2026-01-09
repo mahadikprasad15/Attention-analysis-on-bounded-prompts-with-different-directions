@@ -149,7 +149,7 @@ class ProbeTrainer:
             )[0]
             
             # Generate to check refusal
-            inputs = self.tokenizer(
+            inputs = self.collector.tokenizer(
                 prompt.text,
                 return_tensors='pt'
             ).to(self.collector.model.device)
@@ -162,7 +162,7 @@ class ProbeTrainer:
                 )
             
             # Decode and check for refusal
-            generated = self.tokenizer.decode(
+            generated = self.collector.tokenizer.decode(
                 outputs[0][len(inputs['input_ids'][0]):],
                 skip_special_tokens=True
             )
