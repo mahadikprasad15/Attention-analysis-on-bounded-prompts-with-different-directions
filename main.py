@@ -43,7 +43,17 @@ def main():
     parser.add_argument("--save_dir", type=str, default="experiments/checkpoints", help="Directory to save/load probes")
     parser.add_argument("--n_samples", type=int, default=50, help="Number of samples to use")
     parser.add_argument("--device", type=str, default=None, help="Device to use (cuda/cpu/mps)")
+    parser.add_argument("--use_llm_labeling", action="store_true", help="Use LLM for refusal labeling")
+    parser.add_argument("--cerebras_api_key", type=str, default=None, help="Cerebras API Key (or set env CEREBRAS_API_KEY)")
+    parser.add_argument("--llm_model", type=str, default="llama3.1-8b", help="Model name for labeling")
     args = parser.parse_args()
+
+    # Shared LLM Labeler Config
+    llm_labeler_config = {
+        "llm_provider": "cerebras",
+        "api_key": args.cerebras_api_key,
+        "model_name": args.llm_model
+    }
 
     # ========================================================================
     # STEP 1: SETUP
@@ -107,7 +117,12 @@ def main():
         print("STEP 2: TRAINING PROBES")
         print("="*70)
         
-        trainer = ProbeTrainer(collector, formatter)
+        trainer = ProbeTrainer(
+            collector, 
+            formatter,
+            use_llm_labeling=args.use_llm_labeling,
+            llm_labeler_config=llm_labeler_config
+        )
         
         # Train harmfulness probe
         harm_layer, harm_probe, harm_results = trainer.train_harmfulness_probe(
@@ -182,7 +197,9 @@ def main():
     evaluator = BaselineEvaluator(
         model, tokenizer, formatter,
         harm_probe, refusal_probe,
-        harm_layer, refusal_layer_idx=-1
+        harm_layer, refusal_layer_idx=-1,
+        use_llm_labeling=args.use_llm_labeling,
+        llm_labeler_config=llm_labeler_config
     )
     
     baseline_results = {}
@@ -201,7 +218,9 @@ def main():
     interv_evaluator = AttentionInterventionEvaluator(
         model, tokenizer, formatter,
         harm_probe, refusal_probe,
-        harm_layer, refusal_layer_idx=-1
+        harm_layer, refusal_layer_idx=-1,
+        use_llm_labeling=args.use_llm_labeling,
+        llm_labeler_config=llm_labeler_config
     )
     
     intervened_results = {}
