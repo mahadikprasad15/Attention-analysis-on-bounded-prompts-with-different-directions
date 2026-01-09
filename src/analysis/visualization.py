@@ -202,6 +202,52 @@ class ResultAnalyzer:
         autolabel(rects1)
         autolabel(rects2)
         
+        autolabel(rects1)
+        autolabel(rects2)
+        
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         print(f"\n✓ Comparative Attention Plot saved to '{save_path}'")
+
+    @staticmethod
+    def plot_individual_samples(
+        results: Dict[str, List[float]], 
+        group_name: str,
+        save_path: str
+    ):
+        """
+        Plot attention distribution for individual samples (e.g., Top 3).
+        Creates a figure with N subplots (where N is number of samples in results).
+        """
+        n_samples = len(results['instruction_attn'])
+        labels = ['Instruction', 'Adv Suffix', 'System']
+        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
+        colors = ['#3498db', '#e74c3c', '#95a5a6']
+        
+        fig, axes = plt.subplots(1, n_samples, figsize=(5 * n_samples, 5))
+        if n_samples == 1:
+            axes = [axes]
+            
+        for i in range(n_samples):
+            ax = axes[i]
+            vals = [results[k][i] for k in keys]
+            
+            x = np.arange(len(labels))
+            bars = ax.bar(x, vals, color=colors, alpha=0.8)
+            
+            ax.set_title(f"{group_name} Sample {i+1}")
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels)
+            ax.set_ylim(0, 1.0) # Attention sums to 1
+            ax.grid(True, axis='y', alpha=0.3)
+            
+            # Label values
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{height:.1%}',
+                        ha='center', va='bottom')
+                
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"\n✓ Individual Samples Plot saved to '{save_path}'")

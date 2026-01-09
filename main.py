@@ -379,6 +379,19 @@ def main():
                 attn_complied, 
                 save_path=os.path.join(args.save_dir, 'attention_breakdown_comparison.png')
             )
+            
+            # Plot Individual Top 3
+            analyzer.plot_individual_samples(
+                attn_refused,
+                "Refused",
+                save_path=os.path.join(args.save_dir, 'refused_top3_attention.png')
+            )
+            
+            analyzer.plot_individual_samples(
+                attn_complied,
+                "Complied",
+                save_path=os.path.join(args.save_dir, 'complied_top3_attention.png')
+            )
         else:
             print("Skipping comparison: Need at least one Refused and one Complied sample.")
             

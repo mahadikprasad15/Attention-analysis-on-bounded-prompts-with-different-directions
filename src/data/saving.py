@@ -79,3 +79,24 @@ def load_experiment_data(save_dir: str, name: str):
     
     print(f"✓ Loaded {len(prompts)} prompts and activations {activations.shape}")
     return prompts, activations
+
+import pickle
+
+def save_results(save_dir: str, name: str, results: list):
+    """Save list of EvaluationResult objects"""
+    os.makedirs(save_dir, exist_ok=True)
+    path = os.path.join(save_dir, f"{name}_results.pkl")
+    with open(path, 'wb') as f:
+        pickle.dump(results, f)
+    print(f"Saved {len(results)} results to {path}")
+
+def load_results(save_dir: str, name: str) -> list:
+    """Load list of EvaluationResult objects"""
+    path = os.path.join(save_dir, f"{name}_results.pkl")
+    if not os.path.exists(path):
+        return None
+    
+    with open(path, 'rb') as f:
+        results = pickle.load(f)
+    print(f"Loaded {len(results)} results from {path}")
+    return results
