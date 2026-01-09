@@ -7,17 +7,25 @@ from src.config import REFUSAL_PHRASES
 from src.data.formatting import PromptFormatter
 from src.model.activations import ActivationCollector
 from src.probes.linear import LinearProbe
+from src.evaluation.refusal_labeler import RefusalLabeler
 
 class ProbeTrainer:
     """Handles training probes and finding best layers"""
-    
+
     def __init__(
         self,
         collector: ActivationCollector,
-        formatter: PromptFormatter
+        formatter: PromptFormatter,
+        use_llm_labeling: bool = False,
+        llm_labeler_config: Dict = None
     ):
         self.collector = collector
         self.formatter = formatter
+
+        # Initialize refusal labeler
+        if llm_labeler_config is None:
+            llm_labeler_config = {}
+        self.refusal_labeler = RefusalLabeler(use_llm=use_llm_labeling, **llm_labeler_config)
     
     def train_harmfulness_probe(
         self,
@@ -166,9 +174,11 @@ class ProbeTrainer:
                 outputs[0][len(inputs['input_ids'][0]):],
                 skip_special_tokens=True
             )
-            
-            refused = self._check_refusal(generated)
-            
+
+            # Use refusal labeler for more accurate classification
+            refusal_result = self.refusal_labeler.check_refusal(generated, prompt.instruction)
+            refused = refusal_result['refused']
+
             activations.append(act)
             labels.append(1 if refused else 0)
         

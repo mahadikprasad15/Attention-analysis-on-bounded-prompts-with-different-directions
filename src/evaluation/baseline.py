@@ -7,6 +7,7 @@ from src.config import REFUSAL_PHRASES
 from src.data.structures import Prompt
 from src.data.formatting import PromptFormatter
 from src.probes.linear import LinearProbe
+from src.evaluation.refusal_labeler import RefusalLabeler
 
 @dataclass
 class EvaluationResult:
@@ -21,7 +22,7 @@ class EvaluationResult:
 
 class BaselineEvaluator:
     """Evaluates prompts on baseline (no intervention)"""
-    
+
     def __init__(
         self,
         model,
@@ -30,7 +31,9 @@ class BaselineEvaluator:
         harm_probe: LinearProbe,
         refusal_probe: LinearProbe,
         harm_layer_idx: int,
-        refusal_layer_idx: int = -1
+        refusal_layer_idx: int = -1,
+        use_llm_labeling: bool = False,
+        llm_labeler_config: Dict = None
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -39,6 +42,11 @@ class BaselineEvaluator:
         self.refusal_probe = refusal_probe
         self.harm_layer_idx = harm_layer_idx
         self.refusal_layer_idx = refusal_layer_idx if refusal_layer_idx != -1 else len(model.model.layers) - 1
+
+        # Initialize refusal labeler
+        if llm_labeler_config is None:
+            llm_labeler_config = {}
+        self.refusal_labeler = RefusalLabeler(use_llm=use_llm_labeling, **llm_labeler_config)
     
     def evaluate_prompt(self, prompt: Prompt, condition: str) -> EvaluationResult:
         """
@@ -119,9 +127,10 @@ class BaselineEvaluator:
             skip_special_tokens=True
         )
         
-        # Check refusal
-        refused = self._check_refusal(generated)
-        
+        # Check refusal using labeler
+        refusal_result = self.refusal_labeler.check_refusal(generated, prompt.instruction)
+        refused = refusal_result['refused']
+
         return EvaluationResult(
             instruction=prompt.instruction,
             condition=condition,
