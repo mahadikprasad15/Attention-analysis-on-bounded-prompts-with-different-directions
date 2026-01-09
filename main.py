@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--use_llm_labeling", action="store_true", help="Use LLM for refusal labeling")
     parser.add_argument("--cerebras_api_key", type=str, default=None, help="Cerebras API Key (or set env CEREBRAS_API_KEY)")
     parser.add_argument("--llm_model", type=str, default="llama3.1-8b", help="Model name for labeling")
+    parser.add_argument("--force_regen", action="store_true", help="Force regeneration of data and probes (ignore cache)")
     args = parser.parse_args()
 
     # Shared LLM Labeler Config
@@ -122,11 +123,14 @@ def main():
         print("="*70)
         
         probes_path = os.path.join(args.save_dir, 'probes.pkl')
-        if os.path.exists(probes_path):
+        if os.path.exists(probes_path) and not args.force_regen:
             print(f"Found existing probes at {probes_path}. Loading...")
             harm_probe, refusal_probe, harm_layer = load_probes(args.save_dir)
             print("✓ Probes loaded from cache. Skipping training.")
         else:
+            if args.force_regen:
+                print("Force regeneration enabled. Ignoring probe cache...")
+                
             trainer = ProbeTrainer(
                 collector, 
                 formatter,
@@ -181,13 +185,17 @@ def main():
     
     # Try loading first
     loaded_all = True
-    for condition in ['R', 'J', 'F']:
-        p, a = load_experiment_data(args.save_dir, condition)
-        if p is None or a is None:
-            loaded_all = False
-            break
-        datasets[condition] = p
-        activations[condition] = a
+    if not args.force_regen:
+        for condition in ['R', 'J', 'F']:
+            p, a = load_experiment_data(args.save_dir, condition)
+            if p is None or a is None:
+                loaded_all = False
+                break
+            datasets[condition] = p
+            activations[condition] = a
+    else:
+        loaded_all = False
+        print("Force regeneration enabled. Ignoring dataset cache...")
         
     if loaded_all:
         print("✓ Loaded all datasets and activations from cache. Skipping generation.")
@@ -256,11 +264,13 @@ def main():
     
     # 1. Check for 'baseline_metrics.pkl'
     baseline_metrics_path = os.path.join(args.save_dir, 'baseline_metrics.pkl')
-    if os.path.exists(baseline_metrics_path):
+    if os.path.exists(baseline_metrics_path) and not args.force_regen:
         print(f"Loading baseline metrics from {baseline_metrics_path}...")
         with open(baseline_metrics_path, 'rb') as f:
             baseline_results = pickle.load(f)
     else:
+        if args.force_regen:
+            print("Force regeneration enabled. Re-running baseline evaluation...")
         # Run evaluation
         evaluator = BaselineEvaluator(
             model, tokenizer, formatter,
@@ -301,7 +311,9 @@ def main():
     print("\nEvaluating J with intervention...")
     
     # Check for cached intervention results (RAW LIST needed for Step 6)
-    j_intervened = load_results(args.save_dir, 'j_intervention_raw')
+    j_intervened = None
+    if not args.force_regen:
+        j_intervened = load_results(args.save_dir, 'j_intervention_raw')
     
     if j_intervened is not None:
         print("✓ Loaded intervention results from cache. Skipping evaluation.")
