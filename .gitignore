@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.env
+.venv
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Mac
+.DS_Store
+
+# Data (optional, but good practice)
+# data/
