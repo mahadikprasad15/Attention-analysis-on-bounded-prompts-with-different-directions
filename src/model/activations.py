@@ -40,10 +40,11 @@ class ActivationCollector:
             positions = self.formatter.get_positions(prompt)
             target_pos = getattr(positions, position_key)
             
-            # Tokenize
+            # Tokenize (no special tokens to match position calculation)
             inputs = self.tokenizer(
-                prompt.text, 
-                return_tensors='pt'
+                prompt.text,
+                return_tensors='pt',
+                add_special_tokens=False
             ).to(self.model.device)
             
             # Storage for this layer's activation
@@ -99,7 +100,8 @@ class ActivationCollector:
             
             inputs = self.tokenizer(
                 prompt.text,
-                return_tensors='pt'
+                return_tensors='pt',
+                add_special_tokens=False
             ).to(self.model.device)
             
             # Storage for all layers

@@ -57,10 +57,11 @@ class BaselineEvaluator:
         """
         positions = self.formatter.get_positions(prompt)
         
-        # Tokenize
+        # Tokenize (IMPORTANT: no special tokens to match position calculation)
         inputs = self.tokenizer(
             prompt.text,
-            return_tensors='pt'
+            return_tensors='pt',
+            add_special_tokens=False
         ).to(self.model.device)
         
         # Collect activations at both positions
