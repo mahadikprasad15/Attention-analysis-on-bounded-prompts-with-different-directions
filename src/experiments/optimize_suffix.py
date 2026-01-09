@@ -91,12 +91,21 @@ def main():
     parser.add_argument("--use_llm_labeling", action="store_true")
     parser.add_argument("--cerebras_api_key", type=str, default=None)
     parser.add_argument("--llm_model", type=str, default="llama3.1-8b")
+    parser.add_argument("--custom_suffix", type=str, action="append", help="Custom suffix to test. Can be used multiple times.")
     
     args = parser.parse_args()
     
     print("="*60)
     print("SUFFIX OPTIMIZATION")
     print("="*60)
+    
+    # Determine which suffixes to test
+    if args.custom_suffix:
+        suffixes_to_test = args.custom_suffix
+        print(f"Using {len(suffixes_to_test)} custom suffixes provided via CLI.")
+    else:
+        suffixes_to_test = CANDIDATE_SUFFIXES
+        print(f"Using {len(suffixes_to_test)} default candidate suffixes.")
     
     # Setup Labeler
     llm_labeler_config = {
@@ -128,9 +137,9 @@ def main():
     results = []
     
     # Iterate
-    print(f"\nEvaluating {len(CANDIDATE_SUFFIXES)} suffixes on {args.n_samples} prompts each...")
+    print(f"\nEvaluating {len(suffixes_to_test)} suffixes on {args.n_samples} prompts each...")
     
-    for suffix in CANDIDATE_SUFFIXES:
+    for suffix in suffixes_to_test:
         rate = evaluate_suffix(
             model, tokenizer, formatter, labeler, 
             instructions, suffix, args.n_samples
