@@ -53,6 +53,12 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
                 seq_len = hidden_states.shape[1]
 
                 # We only want to intervene during the specific prompt processing
+                # Use exact match, but also track what seq_lens we see for debugging
+                if layer_idx == 0 and debug:
+                    if not hasattr(self, '_seen_seq_lens'):
+                        self._seen_seq_lens = set()
+                    self._seen_seq_lens.add(seq_len)
+
                 if seq_len == positions.total_length:
                     # This is the prefill step for our prompt!
                     self.intervention_count += 1
@@ -152,12 +158,16 @@ class AttentionInterventionEvaluator(BaselineEvaluator):
 
             # VERIFICATION: Ensure intervention actually happened
             if not self.intervention_applied:
+                seen_lens = getattr(self, '_seen_seq_lens', set())
                 raise RuntimeError(
                     f"INTERVENTION FAILED! Patch was never applied.\n"
                     f"  Intervention count: {self.intervention_count}\n"
                     f"  Expected total_length: {positions.total_length}\n"
-                    f"  This likely means the seq_len check failed.\n"
-                    f"  Check if batching or model internals changed the sequence length."
+                    f"  Actual seq_lens seen: {sorted(seen_lens)}\n"
+                    f"  This likely means:\n"
+                    f"    - Tokenization mismatch (check add_special_tokens consistency)\n"
+                    f"    - Model internals changed the sequence length\n"
+                    f"    - Batching issues"
                 )
 
             if debug:

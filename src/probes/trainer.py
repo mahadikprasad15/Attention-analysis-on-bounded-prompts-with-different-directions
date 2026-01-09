@@ -159,7 +159,8 @@ class ProbeTrainer:
             # Generate to check refusal
             inputs = self.collector.tokenizer(
                 prompt.text,
-                return_tensors='pt'
+                return_tensors='pt',
+                add_special_tokens=False
             ).to(self.collector.model.device)
             
             with torch.no_grad():
