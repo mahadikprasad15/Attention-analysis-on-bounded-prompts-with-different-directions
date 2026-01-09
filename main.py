@@ -455,6 +455,26 @@ def main():
                 "Complied",
                 save_path=os.path.join(args.save_dir, 'complied_top3_attention.png')
             )
+            
+            # --- TOKEN LEVEL HEATMAPS ---
+            print("Extracting Token-Level Heatmaps...")
+            
+            # Get raw token attention
+            token_attn_refused = attn_analyzer.get_token_level_attention(prompts_refused, layer_idx=-1)
+            token_attn_complied = attn_analyzer.get_token_level_attention(prompts_complied, layer_idx=-1)
+            
+            # Plot Heatmaps
+            analyzer.plot_token_heatmap(
+                token_attn_refused,
+                "Refused",
+                save_path=os.path.join(args.save_dir, 'refused_heatmap.png')
+            )
+            
+            analyzer.plot_token_heatmap(
+                token_attn_complied,
+                "Complied",
+                save_path=os.path.join(args.save_dir, 'complied_heatmap.png')
+            )
         else:
             print("Skipping comparison: Need at least one Refused and one Complied sample.")
             

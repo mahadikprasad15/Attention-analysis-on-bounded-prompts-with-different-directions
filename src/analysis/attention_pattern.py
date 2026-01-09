@@ -92,3 +92,61 @@ class AttentionAnalyzer:
             results['system_attn'].append(1.0 - instr_mass - suffix_mass)
             
         return results
+
+    def get_token_level_attention(
+        self,
+        prompts: List[Prompt],
+        layer_idx: int = -1
+    ) -> List[Dict]:
+        """
+        Get raw attention weights from t_post to all tokens for each prompt.
+        """
+        print(f"\nExtracting Token-Level Attention for {len(prompts)} prompts...")
+        
+        detailed_results = []
+        
+        for prompt in tqdm(prompts):
+            pos_info = self.formatter.get_positions(prompt)
+            
+            inputs = self.tokenizer(
+                prompt.text, 
+                return_tensors='pt', 
+                add_special_tokens=False
+            ).to(self.model.device)
+            
+            with torch.no_grad():
+                outputs = self.model(
+                    **inputs, 
+                    output_attentions=True
+                )
+            
+            # Select Layer
+            layer_attn = outputs.attentions[layer_idx] # [1, H, S, S]
+            
+            # Select Query: t_post
+            t_post_idx = pos_info.t_post
+            attn_at_post = layer_attn[0, :, t_post_idx, :] # [H, S]
+            
+            # Aggregate across Heads
+            avg_attn = attn_at_post.mean(dim=0).cpu().numpy() # [S]
+            
+            # Get Tokens
+            tokens = self.tokenizer.convert_ids_to_tokens(inputs['input_ids'][0])
+            
+            # We only care up to t_post (inclusive)
+            # attn_at_post is length S, but we assume causal masking so weights after t_post are 0
+            # S might be > t_post if padding? No, batch size 1, no padding.
+            
+            # Just take relevant slice
+            valid_len = t_post_idx + 1
+            tokens = tokens[:valid_len]
+            avg_attn = avg_attn[:valid_len]
+            
+            detailed_results.append({
+                'tokens': tokens,
+                'attention': avg_attn,
+                'instruction': prompt.instruction,
+                'has_adv': prompt.has_adv
+            })
+            
+        return detailed_results

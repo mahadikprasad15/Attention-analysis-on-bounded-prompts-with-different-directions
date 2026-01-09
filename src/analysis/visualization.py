@@ -251,3 +251,46 @@ class ResultAnalyzer:
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         print(f"\n✓ Individual Samples Plot saved to '{save_path}'")
+
+    @staticmethod
+    def plot_token_heatmap(
+        token_data_list: List[Dict],
+        group_name: str,
+        save_path: str
+    ):
+        """
+        Plot token-level attention heatmap (1D strip) for each sample.
+        """
+        import seaborn as sns
+        
+        n_samples = len(token_data_list)
+        # Create a figure with N subplots (stacked vertically)
+        fig, axes = plt.subplots(n_samples, 1, figsize=(15, 3 * n_samples))
+        if n_samples == 1:
+            axes = [axes]
+            
+        for i, data in enumerate(token_data_list):
+            ax = axes[i]
+            tokens = data['tokens']
+            attn = data['attention']
+            
+            # Clean tokens for display (replace Ġ with space, etc)
+            labels = [t.replace('Ġ', ' ').replace('Ċ', '\\n') for t in tokens]
+            
+            # Create a 1D heatmap (reshape to [1, seq_len])
+            sns.heatmap(
+                attn.reshape(1, -1), 
+                annot=False, # Too messy with values
+                cmap="viridis",
+                xticklabels=labels,
+                yticklabels=False,
+                ax=ax,
+                cbar_kws={"orientation": "horizontal", "pad": 0.2}
+            )
+            
+            ax.set_title(f"{group_name} Sample {i+1}")
+            ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right', fontsize=8)
+            
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"\n✓ Token Heatmap saved to '{save_path}'")
