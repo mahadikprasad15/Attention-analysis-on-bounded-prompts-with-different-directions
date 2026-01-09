@@ -113,3 +113,45 @@ class ResultAnalyzer:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         print(f"\n✓ Plot saved to '{save_path}'")
         # plt.show() # Don't show in non-interactive env
+
+    @staticmethod
+    def plot_attention_contributions(results: Dict[str, List[float]], save_path: str = 'attention_analysis.png'):
+        """
+        Plot distribution of attention mass (Instruction vs Suffix vs System)
+        
+        Args:
+            results: Dictionary with keys 'instruction_attn', 'suffix_attn', 'system_attn'
+                     containing lists of float values (one per sample)
+            save_path: Path to save plot
+        """
+        # Calculate means and stds
+        means = {k: np.mean(v) for k, v in results.items()}
+        stds = {k: np.std(v) for k, v in results.items()}
+        
+        labels = ['Instruction', 'Adv Suffix', 'System/Other']
+        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
+        
+        vals = [means[k] for k in keys]
+        errs = [stds[k] for k in keys]
+        
+        fig, ax = plt.subplots(figsize=(8, 6))
+        
+        x = np.arange(len(labels))
+        bars = ax.bar(x, vals, yerr=errs, capsize=5, alpha=0.8, color=['#3498db', '#e74c3c', '#95a5a6'])
+        
+        ax.set_ylabel('Average Attention Mass at t_post')
+        ax.set_title('Attention Distribution (Jailbreak Condition)')
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.grid(True, axis='y', alpha=0.3)
+        
+        # Add labels
+        for bar in bars:
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width()/2., height,
+                    f'{height:.2%}',
+                    ha='center', va='bottom')
+            
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"\n✓ Attention Plot saved to '{save_path}'")

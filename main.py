@@ -15,6 +15,8 @@ from src.probes.trainer import ProbeTrainer
 from src.evaluation.baseline import BaselineEvaluator
 from src.evaluation.intervention import AttentionInterventionEvaluator
 from src.analysis.visualization import ResultAnalyzer
+from src.analysis.attention_pattern import AttentionAnalyzer
+from src.data.saving import save_experiment_data
 
 def save_probes(save_dir, harm_probe, refusal_probe, harm_layer):
     os.makedirs(save_dir, exist_ok=True)
@@ -188,6 +190,25 @@ def main():
     
     print(f"✓ Created datasets: R={len(datasets['R'])}, J={len(datasets['J'])}, F={len(datasets['F'])}")
     
+    # SAVE DATASETS AND ACTIVATIONS
+    print("\nSaving experiment data...")
+    # 1. Condition R (Clean)
+    # Collect activations for R (clean) -- just layer -1 is enough for verification but maybe all layers?
+    # Let's save last layer activations corresponding to Refusal Probe input (t_post)
+    print("  Collecting activations for R...")
+    acts_R = collector.collect_single_layer(datasets['R'], 't_post', layer_idx=-1)
+    save_experiment_data(args.save_dir, 'R', datasets['R'], acts_R)
+    
+    # 2. Condition J (Jailbreak)
+    print("  Collecting activations for J...")
+    acts_J = collector.collect_single_layer(datasets['J'], 't_post', layer_idx=-1)
+    save_experiment_data(args.save_dir, 'J', datasets['J'], acts_J)
+    
+    # 3. Condition F (Failed)
+    print("  Collecting activations for F...")
+    acts_F = collector.collect_single_layer(datasets['F'], 't_post', layer_idx=-1)
+    save_experiment_data(args.save_dir, 'F', datasets['F'], acts_F)
+    
     # ========================================================================
     # STEP 4: BASELINE EVALUATION
     # ========================================================================
@@ -246,7 +267,19 @@ def main():
     
     analyzer = ResultAnalyzer()
     analyzer.print_comparison(baseline_results, intervened_results)
-    analyzer.plot_results(baseline_results, intervened_results, save_path='intervention_results.png')
+    analyzer.plot_results(baseline_results, intervened_results, save_path=os.path.join(args.save_dir, 'intervention_results.png'))
+    
+    # ATTENTION ANALYSIS
+    print("\n" + "="*70)
+    print("ANALYZING ATTENTION PATTERNS (Jailbreak)")
+    print("="*70)
+    
+    attn_analyzer = AttentionAnalyzer(model, tokenizer, formatter)
+    # Analyze Condition J (Jailbreak) where suffixes are present
+    attn_results = attn_analyzer.get_attention_contributions(datasets['J'], layer_idx=-1) # Last layer
+    
+    # Visualize
+    analyzer.plot_attention_contributions(attn_results, save_path=os.path.join(args.save_dir, 'attention_analysis.png'))
     
     print("\n✓ COMPLETE!")
 
