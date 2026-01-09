@@ -135,6 +135,7 @@ def main():
         # Note: Refusal probe training requires generation, so it's slower.
         refusal_probe = trainer.train_refusal_probe(
             harmful_instructions,
+            harmless_instructions=harmless_instructions,
             layer_idx=-1
         )
         

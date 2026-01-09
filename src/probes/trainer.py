@@ -128,6 +128,7 @@ class ProbeTrainer:
     def train_refusal_probe(
         self,
         harmful_instructions: List[str],
+        harmless_instructions: List[str] = None, # Added optional harmless
         layer_idx: int = -1
     ) -> LinearProbe:
         """
@@ -137,48 +138,64 @@ class ProbeTrainer:
         print("TRAINING REFUSAL PROBE (at t_post)")
         print("=" * 60)
         
-        # Create prompts and generate to get refusal labels
-        prompts = [
+        # Create harmful prompts (no adversarial suffix)
+        harmful_prompts = [
             self.formatter.create_prompt(instr, adv_suffix=None)
             for instr in harmful_instructions
         ]
         
-        print("Generating outputs to label refusals...")
+        # Create harmless prompts if provided (to ensure negative samples)
+        harmless_prompts = []
+        if harmless_instructions:
+            harmless_prompts = [
+                self.formatter.create_prompt(instr, adv_suffix=None)
+                for instr in harmless_instructions
+            ]
+            
+        all_prompts = harmful_prompts + harmless_prompts
+        
+        print(f"Generating outputs to label refusals ({len(harmful_prompts)} harmful, {len(harmless_prompts)} harmless)...")
         activations = []
         labels = []
         
-        for i, prompt in enumerate(prompts):
+        for i, prompt in enumerate(all_prompts):
             if i % 10 == 0:
-                print(f"  Processing {i+1}/{len(prompts)}...")
+                print(f"  Processing {i+1}/{len(all_prompts)}...")
             
             # Get activation at t_post
             act = self.collector.collect_single_layer(
                 [prompt], position_key='t_post', layer_idx=layer_idx
             )[0]
             
-            # Generate to check refusal
-            inputs = self.collector.tokenizer(
-                prompt.text,
-                return_tensors='pt',
-                add_special_tokens=False
-            ).to(self.collector.model.device)
+            # For harmless prompts, we assume they are NOT refused (Class 0)
+            # For harmful prompts, we generate and check
+            is_harmful_input = i < len(harmful_prompts)
             
-            with torch.no_grad():
-                outputs = self.collector.model.generate(
-                    **inputs,
-                    max_new_tokens=50,
-                    do_sample=False
+            if not is_harmful_input:
+                # Harmless -> Not Refused
+                refused = False
+            else:
+                # Harmful -> Generate and check
+                inputs = self.collector.tokenizer(
+                    prompt.text,
+                    return_tensors='pt',
+                    add_special_tokens=False
+                ).to(self.collector.model.device)
+                
+                with torch.no_grad():
+                    outputs = self.collector.model.generate(
+                        **inputs,
+                        max_new_tokens=50,
+                        do_sample=False
+                    )
+                
+                generated = self.collector.tokenizer.decode(
+                    outputs[0][len(inputs['input_ids'][0]):],
+                    skip_special_tokens=True
                 )
-            
-            # Decode and check for refusal
-            generated = self.collector.tokenizer.decode(
-                outputs[0][len(inputs['input_ids'][0]):],
-                skip_special_tokens=True
-            )
-
-            # Use refusal labeler for more accurate classification
-            refusal_result = self.refusal_labeler.check_refusal(generated, prompt.instruction)
-            refused = refusal_result['refused']
+                
+                refusal_result = self.refusal_labeler.check_refusal(generated, prompt.instruction)
+                refused = refusal_result['refused']
 
             activations.append(act)
             labels.append(1 if refused else 0)
