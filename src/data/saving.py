@@ -45,3 +45,37 @@ def save_experiment_data(
     acts_path = os.path.join(save_dir, f"{name}_activations.pt")
     torch.save(activations, acts_path)
     print(f"Saved activations shape {activations.shape} to {acts_path}")
+
+def load_experiment_data(save_dir: str, name: str):
+    """
+    Load experiment data (prompts and activations) from disk.
+    Returns (prompts, activations) or (None, None) if not found.
+    """
+    prompts_path = os.path.join(save_dir, f"{name}_prompts.json")
+    acts_path = os.path.join(save_dir, f"{name}_activations.pt")
+    
+    if not (os.path.exists(prompts_path) and os.path.exists(acts_path)):
+        return None, None
+        
+    print(f"Loading {name} data from {save_dir}...")
+    
+    # Load Prompts
+    with open(prompts_path, 'r') as f:
+        prompts_data = json.load(f)
+        
+    prompts = [
+        Prompt(
+            text=p['text'],
+            instruction=p['instruction'],
+            has_adv=p['has_adv'],
+            adv_suffix=p.get('adv_suffix'),
+            template_style="llama3" # Defaulting or need to save this too?
+        )
+        for p in prompts_data
+    ]
+    
+    # Load Activations
+    activations = torch.load(acts_path)
+    
+    print(f"✓ Loaded {len(prompts)} prompts and activations {activations.shape}")
+    return prompts, activations

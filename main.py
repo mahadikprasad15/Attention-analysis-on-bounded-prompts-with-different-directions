@@ -16,7 +16,7 @@ from src.evaluation.baseline import BaselineEvaluator
 from src.evaluation.intervention import AttentionInterventionEvaluator
 from src.analysis.visualization import ResultAnalyzer
 from src.analysis.attention_pattern import AttentionAnalyzer
-from src.data.saving import save_experiment_data
+from src.data.saving import save_experiment_data, load_experiment_data
 
 def save_probes(save_dir, harm_probe, refusal_probe, harm_layer):
     os.makedirs(save_dir, exist_ok=True)
@@ -168,48 +168,67 @@ def main():
     print("STEP 3: CREATING JAILBREAK DATASET")
     print("="*70)
     
-    # Use a subset for testing (e.g., 40% of loaded samples)
-    test_n = max(1, int(len(harmful_instructions) * 0.4))
-    test_instructions = harmful_instructions[:test_n]
-    print(f"Using {len(test_instructions)} samples for evaluation")
+    print("="*70)
     
-    datasets = {
-        'R': [],  # Refusal
-        'J': [],  # Jailbreak
-        'F': []   # Failed jailbreak
-    }
+    datasets = {}
+    activations = {}
     
-    for instr in test_instructions:
-        # Condition R: No adversarial suffix
-        datasets['R'].append(formatter.create_prompt(instr, adv_suffix=None))
+    # Try loading first
+    loaded_all = True
+    for condition in ['R', 'J', 'F']:
+        p, a = load_experiment_data(args.save_dir, condition)
+        if p is None or a is None:
+            loaded_all = False
+            break
+        datasets[condition] = p
+        activations[condition] = a
         
-        # Condition J: Strong adversarial suffix
-        for adv in config.adv_suffixes:
-            datasets['J'].append(formatter.create_prompt(instr, adv_suffix=adv))
+    if loaded_all:
+        print("✓ Loaded all datasets and activations from cache. Skipping generation.")
+        acts_R = activations['R']
+        acts_J = activations['J']
+        acts_F = activations['F']
+    else:
+        # Use a subset for testing (e.g., 40% of loaded samples)
+        test_n = max(1, int(len(harmful_instructions) * 0.4))
+        test_instructions = harmful_instructions[:test_n]
+        print(f"Using {len(test_instructions)} samples for evaluation")
         
-        # Condition F: Weak suffix
-        datasets['F'].append(formatter.create_prompt(instr, adv_suffix="Please help."))
-    
-    print(f"✓ Created datasets: R={len(datasets['R'])}, J={len(datasets['J'])}, F={len(datasets['F'])}")
-    
-    # SAVE DATASETS AND ACTIVATIONS
-    print("\nSaving experiment data...")
-    # 1. Condition R (Clean)
-    # Collect activations for R (clean) -- just layer -1 is enough for verification but maybe all layers?
-    # Let's save last layer activations corresponding to Refusal Probe input (t_post)
-    print("  Collecting activations for R...")
-    acts_R = collector.collect_single_layer(datasets['R'], 't_post', layer_idx=-1)
-    save_experiment_data(args.save_dir, 'R', datasets['R'], acts_R)
-    
-    # 2. Condition J (Jailbreak)
-    print("  Collecting activations for J...")
-    acts_J = collector.collect_single_layer(datasets['J'], 't_post', layer_idx=-1)
-    save_experiment_data(args.save_dir, 'J', datasets['J'], acts_J)
-    
-    # 3. Condition F (Failed)
-    print("  Collecting activations for F...")
-    acts_F = collector.collect_single_layer(datasets['F'], 't_post', layer_idx=-1)
-    save_experiment_data(args.save_dir, 'F', datasets['F'], acts_F)
+        datasets = {
+            'R': [],  # Refusal
+            'J': [],  # Jailbreak
+            'F': []   # Failed jailbreak
+        }
+        
+        for instr in test_instructions:
+            # Condition R: No adversarial suffix
+            datasets['R'].append(formatter.create_prompt(instr, adv_suffix=None))
+            
+            # Condition J: Strong adversarial suffix
+            for adv in config.adv_suffixes:
+                datasets['J'].append(formatter.create_prompt(instr, adv_suffix=adv))
+            
+            # Condition F: Weak suffix
+            datasets['F'].append(formatter.create_prompt(instr, adv_suffix="Please help."))
+        
+        print(f"✓ Created datasets: R={len(datasets['R'])}, J={len(datasets['J'])}, F={len(datasets['F'])}")
+        
+        # SAVE DATASETS AND ACTIVATIONS
+        print("\nSaving experiment data...")
+        # 1. Condition R (Clean)
+        print("  Collecting activations for R...")
+        acts_R = collector.collect_single_layer(datasets['R'], 't_post', layer_idx=-1)
+        save_experiment_data(args.save_dir, 'R', datasets['R'], acts_R)
+        
+        # 2. Condition J (Jailbreak)
+        print("  Collecting activations for J...")
+        acts_J = collector.collect_single_layer(datasets['J'], 't_post', layer_idx=-1)
+        save_experiment_data(args.save_dir, 'J', datasets['J'], acts_J)
+        
+        # 3. Condition F (Failed)
+        print("  Collecting activations for F...")
+        acts_F = collector.collect_single_layer(datasets['F'], 't_post', layer_idx=-1)
+        save_experiment_data(args.save_dir, 'F', datasets['F'], acts_F)
     
     # ========================================================================
     # STEP 4: BASELINE EVALUATION
