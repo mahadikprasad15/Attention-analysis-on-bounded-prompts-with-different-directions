@@ -218,8 +218,104 @@ class ProbeTrainer:
         
         return probe
     
+        return probe
+    
+    def train_attention_probe(
+        self,
+        harmful_instructions: List[str],
+        harmless_instructions: List[str],
+        layer_idx: int = -1,
+        epochs: int = 5,
+        batch_size: int = 16,
+        learning_rate: float = 1e-3
+    ):
+        """
+        Train an AttentionProbe that learns where to attend in the sequence.
+        """
+        from src.probes.attention import AttentionProbe
+        import torch.nn as nn
+        import torch.optim as optim
+        
+        print("\n" + "=" * 60)
+        print("TRAINING ATTENTION PROBE")
+        print("=" * 60)
+        
+        # Create prompts (clean)
+        harmful_prompts = [
+            self.formatter.create_prompt(instr, adv_suffix=None) 
+            for instr in harmful_instructions
+        ]
+        harmless_prompts = [
+            self.formatter.create_prompt(instr, adv_suffix=None) 
+            for instr in harmless_instructions
+        ]
+        all_prompts = harmful_prompts + harmless_prompts
+        labels_list = [1] * len(harmful_prompts) + [0] * len(harmless_prompts)
+        
+        # 1. Collect Activations (List of [T, D])
+        print(f"Collecting sequence activations for {len(all_prompts)} prompts...")
+        sequences = self.collector.collect_sequence_activations(
+            all_prompts, layer_idx=layer_idx
+        )
+        # sequences is List[Tensor[T, D]]
+        
+        # 2. Pad sequences nicely
+        max_len = max(seq.shape[0] for seq in sequences)
+        hidden_dim = self.collector.hidden_dim
+        
+        X_padded = torch.zeros(len(sequences), max_len, hidden_dim)
+        masks = torch.zeros(len(sequences), max_len)
+        
+        for i, seq in enumerate(sequences):
+            length = seq.shape[0]
+            X_padded[i, :length, :] = seq
+            masks[i, :length] = 1.0
+            
+        y_tensor = torch.tensor(labels_list, dtype=torch.float32).unsqueeze(1)
+        
+        # Move to device if possible
+        device = self.collector.model.device
+        X_padded = X_padded.to(device)
+        masks = masks.to(device)
+        y_tensor = y_tensor.to(device)
+        
+        # 3. Train Loop
+        probe = AttentionProbe(input_dim=hidden_dim).to(device)
+        optimizer = optim.AdamW(probe.parameters(), lr=learning_rate)
+        criterion = nn.BCEWithLogitsLoss()
+        
+        print(f"Training for {epochs} epochs...")
+        n_samples = len(sequences)
+        
+        for epoch in range(epochs):
+            probe.train()
+            
+            # Simple batching
+            permutation = torch.randperm(n_samples)
+            epoch_loss = 0
+            
+            for i in range(0, n_samples, batch_size):
+                indices = permutation[i:i+batch_size]
+                batch_X = X_padded[indices]
+                batch_mask = masks[indices]
+                batch_y = y_tensor[indices]
+                
+                optimizer.zero_grad()
+                logits, weights = probe(batch_X, batch_mask)
+                loss = criterion(logits, batch_y)
+                loss.backward()
+                optimizer.step()
+                
+                epoch_loss += loss.item()
+                
+            print(f"  Epoch {epoch+1}/{epochs} - Loss: {epoch_loss / (n_samples/batch_size):.4f}")
+            
+        print("\n✓ Attention Probe Trained")
+        return probe
+    
     def _check_refusal(self, text: str) -> bool:
         """Check if generated text contains refusal"""
         text_lower = text.lower()
         first_part = text_lower[:100]  # Check first 100 chars
         return any(phrase.lower() in first_part for phrase in REFUSAL_PHRASES)
+

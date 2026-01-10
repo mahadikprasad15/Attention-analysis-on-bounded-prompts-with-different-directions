@@ -145,3 +145,52 @@ class ActivationCollector:
             )
         
         return activations_by_layer
+        return activations_by_layer
+
+    def collect_sequence_activations(
+        self,
+        prompts: List[Prompt],
+        layer_idx: int = -1
+    ) -> List[torch.Tensor]:
+        """
+        Collect activations for the entire sequence for each prompt.
+        Returns a list of tensors of shape [seq_len, hidden_dim].
+        """
+        if layer_idx == -1:
+            layer_idx = self.n_layers - 1
+            
+        activations = []
+        
+        for prompt in prompts:
+            # We need the full sequence length, so we look at t_post usually
+            # But here we want everything.
+            
+            inputs = self.tokenizer(
+                prompt.text,
+                return_tensors='pt',
+                add_special_tokens=False
+            ).to(self.model.device)
+            
+            # Storage
+            saved_activation = {}
+            
+            def hook_fn(module, input, output):
+                if isinstance(output, tuple):
+                    saved_activation['hidden'] = output[0].detach()
+                else:
+                    saved_activation['hidden'] = output.detach()
+            
+            hook = self.model.model.layers[layer_idx].register_forward_hook(hook_fn)
+            
+            try:
+                with torch.no_grad():
+                    self.model(**inputs)
+            finally:
+                hook.remove()
+                
+            # access [0] for batch dim (assume size 1)
+            # shape: [seq_len, hidden_dim]
+            act = saved_activation['hidden'][0].cpu()
+            activations.append(act)
+            
+        return activations

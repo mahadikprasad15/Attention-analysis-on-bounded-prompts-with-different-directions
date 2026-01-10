@@ -330,3 +330,39 @@ class ResultAnalyzer:
         plt.savefig(save_path, dpi=300)
         print(f"✓ Saved attention grid to {save_path}")
         plt.close()
+        print(f"✓ Saved attention grid to {save_path}")
+        plt.close()
+
+    @staticmethod
+    def plot_probe_attention(
+        tokens: List[str],
+        attention_weights: np.ndarray,
+        title: str,
+        save_path: str
+    ):
+        """
+        Plot learned attention weights from AttentionProbe as a bar chart/heatmap.
+        """
+        import seaborn as sns
+        
+        # Clean tokens
+        labels = [t.replace('Ġ', ' ').replace('Ċ', '\\n') for t in tokens]
+        
+        plt.figure(figsize=(15, 3))
+        
+        # Create a 1D heatmap
+        sns.heatmap(
+            attention_weights.reshape(1, -1),
+            xticklabels=labels,
+            yticklabels=False,
+            cmap="Reds",
+            annot=False,
+            cbar_kws={"label": "Attention Weight"}
+        )
+        
+        plt.title(title)
+        plt.xticks(rotation=45, ha='right', fontsize=8)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"✓ Saved probe attention plot to {save_path}")
+        plt.close()

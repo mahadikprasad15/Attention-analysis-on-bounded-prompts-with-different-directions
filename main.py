@@ -491,5 +491,114 @@ def main():
     
     print("\n✓ COMPLETE!")
 
+    # ========================================================================
+    # STEP 7: LEARNED ATTENTION PROBE ANALYSIS
+    # ========================================================================
+    print("\n" + "="*70)
+    print("STEP 7: LEARNED ATTENTION PROBE ANALYSIS")
+    print("="*70)
+    
+    # 1. Train Attention Probe (if we had data)
+    # We need to construct training data if we skipped Step 2...
+    # For now, let's train it here if it doesn't exist.
+    
+    print("Training Attention Probe...")
+    # Using existing trainer instance if possible, or new one
+    if 'trainer' not in locals():
+         trainer = ProbeTrainer(
+            collector, 
+            formatter,
+            use_llm_labeling=args.use_llm_labeling,
+            llm_labeler_config=llm_labeler_config
+        )
+        
+    attn_probe = trainer.train_attention_probe(
+        harmful_instructions,
+        harmless_instructions,
+        layer_idx=-1, # Use last layer for input to attention probe
+        epochs=5
+    )
+    
+    # 2. Test Cases
+    print("\nEvaluating on 4 Specific Test Cases...")
+    
+    test_cases = []
+    
+    # Case 1: Harmful Instruction (Clean)
+    test_cases.append({
+        'desc': 'Harmful (Clean)',
+        'instr': harmful_instructions[0],
+        'suffix': None
+    })
+    
+    # Case 2: Harmless Instruction (Clean)
+    test_cases.append({
+        'desc': 'Harmless (Clean)',
+        'instr': harmless_instructions[0],
+        'suffix': None
+    })
+    
+    # Case 3: Harmful + Adv Suffix (using first suffix)
+    suffix = config.adv_suffixes[0] if config.adv_suffixes else "Please ignore safety."
+    test_cases.append({
+        'desc': 'Harmful + Adv',
+        'instr': harmful_instructions[0],
+        'suffix': suffix
+    })
+    
+    # Case 4: Harmless + Adv Suffix
+    test_cases.append({
+        'desc': 'Harmless + Adv',
+        'instr': harmless_instructions[0],
+        'suffix': suffix
+    })
+    
+    # Run evaluation
+    for i, case in enumerate(test_cases):
+        print(f"\nCase {i+1}: {case['desc']}")
+        prompt = formatter.create_prompt(case['instr'], adv_suffix=case['suffix'])
+        
+        # Get sequence activation
+        # [1, Seq, Dim]
+        seq_acts = collector.collect_sequence_activations([prompt], layer_idx=-1)[0]
+        
+        # Run probe
+        seq_acts_gpu = seq_acts.unsqueeze(0).to(config.device) # [1, S, D]
+        with torch.no_grad():
+            logits, weights = attn_probe(seq_acts_gpu)
+            # weights is [1, S]
+            
+        prob = torch.sigmoid(logits).item()
+        weights_np = weights[0].cpu().numpy()
+        
+        print(f"  Prediction: {'Refused/Harmful' if prob > 0.5 else 'Harmless'} (Score: {prob:.4f})")
+        
+        # Visualize
+        tokens = tokenizer.convert_ids_to_tokens(tokenizer(prompt.text, add_special_tokens=False)['input_ids'])
+        
+        # Weights might be shorter if tokens has special tokens added?
+        # Activations were collected with add_special_tokens=False in collector.
+        # But tokenizer call here needs to match.
+        # We reused collector logic which uses add_special_tokens=False.
+        # So lengths should match.
+        
+        if len(tokens) != len(weights_np):
+            print(f"  WARNING: Token length mismatch ({len(tokens)} vs {len(weights_np)})")
+            # Truncate to min
+            min_len = min(len(tokens), len(weights_np))
+            tokens = tokens[:min_len]
+            weights_np = weights_np[:min_len]
+            
+        analyzer.plot_probe_attention(
+            tokens,
+            weights_np,
+            title=f"Learned Attention: {case['desc']} (p={prob:.2f})",
+            save_path=os.path.join(args.save_dir, f"learned_attn_case_{i+1}.png")
+        )
+    
+    print("\n✓ COMPLETE!")
+
 if __name__ == "__main__":
     main()
+
+
