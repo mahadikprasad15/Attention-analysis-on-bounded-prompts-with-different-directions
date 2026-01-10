@@ -294,3 +294,39 @@ class ResultAnalyzer:
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         print(f"\n✓ Token Heatmap saved to '{save_path}'")
+        return detailed_results
+
+    @staticmethod
+    def plot_token_attention_grid(
+        detailed_attention: Dict,
+        title: str,
+        save_path: str
+    ):
+        """
+        Plot a full token-vs-token attention grid heatmap.
+        """
+        import seaborn as sns
+        
+        tokens = detailed_attention['tokens']
+        attn = detailed_attention['attention']
+        
+        # Clean tokens
+        labels = [t.replace('Ġ', ' ').replace('Ċ', '\\n') for t in tokens]
+        
+        plt.figure(figsize=(12, 10))
+        
+        sns.heatmap(
+            attn,
+            xticklabels=labels,
+            yticklabels=labels,
+            cmap="viridis",
+            annot=False
+        )
+        
+        plt.title(title)
+        plt.xticks(rotation=90, fontsize=8)
+        plt.yticks(rotation=0, fontsize=8)
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        print(f"✓ Saved attention grid to {save_path}")
+        plt.close()

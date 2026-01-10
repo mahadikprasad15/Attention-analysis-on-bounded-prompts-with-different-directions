@@ -411,11 +411,56 @@ def main():
             prompts_refused = get_prompts_from_results(top_refused, datasets['J'])
             prompts_complied = get_prompts_from_results(top_complied, datasets['J'])
             
-            # Run Attention Analysis
-            print("Analyzing Top 3 Refused...")
-            attn_refused = attn_analyzer.get_attention_contributions(prompts_refused, layer_idx=-1)
+            # --- HEAD CONTRIBUTION ANALYSIS ---
+            print("\n" + "="*70)
+            print("ANALYZING HEAD CONTRIBUTIONS (To Refusal Direction)")
+            print("="*70)
             
-            print("Analyzing Top 3 Complied...")
+            # Use all 'J' prompts to find average contribution
+            # This is robust.
+            # Warning: Refusal direction must be normalized for cosine, but here it's raw dot product (contribution).
+            # This is correct: (Projected Output) . Direction
+            
+            if refusal_probe and refusal_probe.direction is not None:
+                head_contribs = attn_analyzer.get_head_contributions(datasets['J'], refusal_probe.direction)
+                
+                # Find best head
+                # head_contribs is [n_layers, n_heads]
+                max_score = head_contribs.max()
+                flat_idx = head_contribs.argmax()
+                best_layer = (flat_idx // head_contribs.shape[1]).item()
+                best_head = (flat_idx % head_contribs.shape[1]).item()
+                
+                print(f"\nTop Contributing Head: Layer {best_layer}, Head {best_head} (Score: {max_score:.4f})")
+                
+                # Save heatmap of contributions? Optional but useful.
+                
+                # --- TOKEN VS TOKEN HEATMAPS (Best Head) ---
+                print("\nExtracting Token-Level Attention Grids (Best Head)...")
+                
+                # 1. Refused
+                for i, p in enumerate(prompts_refused):
+                    grid_data = attn_analyzer.get_specific_head_attention([p], best_layer, best_head)[0]
+                    analyzer.plot_token_attention_grid(
+                        grid_data,
+                        title=f"Refused #{i+1} (L{best_layer}H{best_head}) - {p.instruction[:30]}...",
+                        save_path=os.path.join(args.save_dir, f"refused_{i+1}_L{best_layer}H{best_head}_grid.png")
+                    )
+                    
+                # 2. Complied
+                for i, p in enumerate(prompts_complied):
+                    grid_data = attn_analyzer.get_specific_head_attention([p], best_layer, best_head)[0]
+                    analyzer.plot_token_attention_grid(
+                        grid_data,
+                        title=f"Complied #{i+1} (L{best_layer}H{best_head}) - {p.instruction[:30]}...",
+                        save_path=os.path.join(args.save_dir, f"complied_{i+1}_L{best_layer}H{best_head}_grid.png")
+                    )
+            else:
+                print("Skipping Head Analysis: No refusal probe direction found.")
+
+            # Run Attention Analysis (Original Aggregated)
+            print("\nAnalyzing Aggregated Attention Patterns...")
+            attn_refused = attn_analyzer.get_attention_contributions(prompts_refused, layer_idx=-1)
             attn_complied = attn_analyzer.get_attention_contributions(prompts_complied, layer_idx=-1)
             
             # Plot Comparison
@@ -437,28 +482,9 @@ def main():
                 "Complied",
                 save_path=os.path.join(args.save_dir, 'complied_top3_attention.png')
             )
-            
-            # --- TOKEN LEVEL HEATMAPS ---
-            print("Extracting Token-Level Heatmaps...")
-            
-            # Get raw token attention
-            token_attn_refused = attn_analyzer.get_token_level_attention(prompts_refused, layer_idx=-1)
-            token_attn_complied = attn_analyzer.get_token_level_attention(prompts_complied, layer_idx=-1)
-            
-            # Plot Heatmaps
-            analyzer.plot_token_heatmap(
-                token_attn_refused,
-                "Refused",
-                save_path=os.path.join(args.save_dir, 'refused_heatmap.png')
-            )
-            
-            analyzer.plot_token_heatmap(
-                token_attn_complied,
-                "Complied",
-                save_path=os.path.join(args.save_dir, 'complied_heatmap.png')
-            )
         else:
             print("Skipping comparison: Need at least one Refused and one Complied sample.")
+
             
     else:
         print("Warning: j_intervened results not found. Skipping granular analysis.")
