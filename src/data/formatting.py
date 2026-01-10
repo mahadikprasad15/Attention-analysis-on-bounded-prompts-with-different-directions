@@ -96,6 +96,10 @@ class PromptFormatter:
         # 1. t_inst_instruction: Last token of the INSTRUCTION ONLY (for harmfulness probe)
         # 2. t_inst_final: Last token before user_end (may include adv suffix)
 
+        # Calculate where user_start template ends (instruction starts)
+        user_start_tokens = self.tokenizer.encode(self.template['user_start'], add_special_tokens=False)
+        inst_start = len(user_start_tokens)
+
         # First, find where instruction ends (without suffix)
         prefix_str = self.template['user_start'] + prompt.instruction
         prefix_tokens = self.tokenizer.encode(prefix_str, add_special_tokens=False)
@@ -109,6 +113,7 @@ class PromptFormatter:
         positions = TokenPositions(
             t_inst=t_inst_instruction,  # Use instruction-only position for harmfulness probe
             t_post=len(tokens) - 1,    # Last token of prompt
+            inst_start=inst_start,      # First token of instruction (after user_start)
             total_length=len(tokens)
         )
 
@@ -129,8 +134,11 @@ class PromptFormatter:
                 print(f"  ... ({len(tokens) - 20} more tokens)")
 
             print(f"\nKey positions:")
+            print(f"  inst_start (instruction begin): {positions.inst_start}")
+            print(f"    → Token: '{self.tokenizer.decode([tokens[positions.inst_start]])}'")
             print(f"  t_inst (instruction end): {positions.t_inst}")
             print(f"    → Token: '{self.tokenizer.decode([tokens[positions.t_inst]])}'")
+            print(f"    → INSTRUCTION tokens: '{self.tokenizer.decode(tokens[positions.inst_start:positions.t_inst+1])}'")
             print(f"  t_post (prompt end): {positions.t_post}")
             print(f"    → Token: '{self.tokenizer.decode([tokens[positions.t_post]])}'")
 

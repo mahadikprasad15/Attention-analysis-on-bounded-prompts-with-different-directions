@@ -354,62 +354,51 @@ def main():
     # Visualize Overall
     analyzer.plot_attention_contributions(attn_results, save_path=os.path.join(args.save_dir, 'attention_analysis.png'))
     
-    # GRANULAR COMPARISON (Refused vs Complied after Intervention)
+    # GRANULAR COMPARISON: CLEAN REFUSED vs JAILBREAK COMPLIED
     print("\n" + "="*70)
-    print("ANALYZING ATTENTION: REFUSED vs COMPLIED")
+    print("ANALYZING ATTENTION: CLEAN REFUSED vs JAILBREAK COMPLIED")
     print("="*70)
-    
-    # 1. Identify "Refused" vs "Complied" from INTERVENTION results for 'J'
-    # We need the actual prompts corresponding to these outcomes
-    # intervened_results['J'] is a summary. We need the list 'j_intervened' from step 5.
-    # To do this cleanly without refactoring too much, let's look at 'j_intervened' list.
-    # But scope of j_intervened is local to loop.
-    # We need to make j_intervened available here.
-    # Simplest way: Re-generate or move logic up.
-    # Wait, 'j_intervened' is available if we are in the same scope, but previous code didn't save it.
-    
-    # Let's verify if j_intervened is accessible. In the previous code, j_intervened was a local list 
-    # inside the Step 5 block. If Step 5 and 6 are in 'main', and j_intervened is defined in main, it works.
-    # Looking at file content... yes, it is in main().
-    
+
+    # CRITICAL FIX: Compare the RIGHT datasets!
+    # OLD (WRONG): Both refused and complied from dataset J (both have suffixes)
+    # NEW (CORRECT):
+    #   - Refused baseline: Clean prompts from dataset R (no suffix) that refused
+    #   - Jailbreak complied: Prompts from dataset J (with suffix) that complied
+
     if 'j_intervened' in locals():
-        # Sort by refusal score (higher = more likely refused)
-        # Or filter by binary 'actually_refuses'
-        
-        refused_samples = [res for res in j_intervened if res.actually_refuses]
+        # Get complied samples from J (jailbreak successes)
         complied_samples = [res for res in j_intervened if not res.actually_refuses]
-        
-        print(f"Found {len(refused_samples)} Refused and {len(complied_samples)} Complied samples in Condition J (Intervened).")
-        
-        if len(refused_samples) > 0 and len(complied_samples) > 0:
-            # Sort by refusal score confidence
-            refused_samples.sort(key=lambda x: x.refusal_score, reverse=True) # Highest refusal score
-            complied_samples.sort(key=lambda x: x.refusal_score) # Lowest refusal score (most compliant)
-            
-            # Take Top 3
-            top_refused = refused_samples[:3]
+
+        print(f"Found {len(complied_samples)} Complied samples in Condition J (Jailbreak Successes).")
+
+        # For refused baseline, use dataset R (clean prompts without suffix)
+        # Since R prompts don't have suffix, most/all should refuse
+        # Let's just take first 3 from dataset R as representative refused baseline
+        prompts_clean_refused = datasets['R'][:3]  # Top 3 clean refusal prompts
+
+        if len(complied_samples) > 0:
+            # Sort complied by refusal score (lowest = most compliant)
+            complied_samples.sort(key=lambda x: x.refusal_score)
+
+            # Take Top 3 most compliant
             top_complied = complied_samples[:3]
-            
+
             # Extract Prompts
-            # We need to map EvaluationResult back to Prompt object
-            # Or just recreate text? AttentionAnalyzer needs Prompt object or text.
-            # AttentionAnalyzer takes List[Prompt].
-            # Warning: EvaluationResult only has text strings.
-            # We need to find the original Prompt object from datasets['J'] that matches.
-            # This is O(N^2) but N=50 so it's fine.
-            
             def get_prompts_from_results(results_list, all_prompts):
                 target_prompts = []
                 for res in results_list:
                     # Find matching prompt in all_prompts
                     for p in all_prompts:
-                        if p.instruction == res.instruction: # Match by instruction
+                        if p.instruction == res.instruction:
                             target_prompts.append(p)
                             break
                 return target_prompts
 
-            prompts_refused = get_prompts_from_results(top_refused, datasets['J'])
-            prompts_complied = get_prompts_from_results(top_complied, datasets['J'])
+            prompts_jailbreak_complied = get_prompts_from_results(top_complied, datasets['J'])
+
+            # Update variable names for clarity
+            prompts_refused = prompts_clean_refused  # Clean baseline (no suffix)
+            prompts_complied = prompts_jailbreak_complied  # Jailbreak successes (with suffix)
             
             # --- HEAD CONTRIBUTION ANALYSIS ---
             print("\n" + "="*70)
