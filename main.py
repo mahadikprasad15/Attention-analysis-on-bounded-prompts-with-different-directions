@@ -471,13 +471,85 @@ def main():
                 "Complied",
                 save_path=os.path.join(args.save_dir, 'complied_top3_attention.png')
             )
+
+            # =================================================================
+            # HEAD-LEVEL SWEEP ANALYSIS
+            # =================================================================
+            print("\n" + "="*80)
+            print("HEAD-LEVEL SWEEP: Analyzing ALL Heads Across ALL Layers")
+            print("="*80)
+            print("\nThis analysis will:")
+            print("  1. Sweep through all 704 heads (22 layers × 32 heads)")
+            print("  2. Compute attention breakdown for each head separately")
+            print("  3. Identify which specific heads show attention hijacking")
+            print("  4. Compare refused vs complied groups")
+            print("\nCompute cost: ~same as regular forward pass (already extracting all attention)")
+
+            # Sweep refused prompts (clean baseline)
+            print("\n" + "-"*80)
+            print("Sweeping REFUSED prompts (clean baseline, no suffix)...")
+            print("-"*80)
+            refused_sweep = attn_analyzer.get_all_heads_attention_breakdown(
+                prompts_refused,
+                group_name="Clean Refused"
+            )
+
+            # Sweep complied prompts (jailbreak successes)
+            print("\n" + "-"*80)
+            print("Sweeping COMPLIED prompts (jailbreak with suffix)...")
+            print("-"*80)
+            complied_sweep = attn_analyzer.get_all_heads_attention_breakdown(
+                prompts_complied,
+                group_name="Jailbreak Complied"
+            )
+
+            # Generate all visualizations
+            analyzer.create_head_sweep_report(
+                refused_sweep,
+                complied_sweep,
+                save_dir=args.save_dir
+            )
+
+            # Print summary statistics
+            print("\n" + "="*80)
+            print("HEAD SWEEP SUMMARY")
+            print("="*80)
+
+            # Find top hijacking heads (high suffix attention in complied group)
+            suffix_avg_complied = complied_sweep['suffix_attn'].mean(axis=2)  # [layers, heads]
+            flat_suffix = suffix_avg_complied.flatten()
+            top_idx = np.argmax(flat_suffix)
+            best_layer = top_idx // complied_sweep['n_heads']
+            best_head = top_idx % complied_sweep['n_heads']
+            best_value = suffix_avg_complied[best_layer, best_head]
+
+            print(f"\nTop Suffix Attention Head:")
+            print(f"  Layer {best_layer}, Head {best_head}")
+            print(f"  Suffix Attention: {best_value:.1%}")
+
+            # Show top 5 heads
+            top_5_indices = np.argsort(flat_suffix)[::-1][:5]
+            print(f"\nTop 5 Heads by Suffix Attention:")
+            for rank, idx in enumerate(top_5_indices, 1):
+                layer = idx // complied_sweep['n_heads']
+                head = idx % complied_sweep['n_heads']
+                val = suffix_avg_complied[layer, head]
+                print(f"  {rank}. L{layer}H{head}: {val:.1%}")
+
+            # Layer-wise statistics
+            layer_avg_suffix = suffix_avg_complied.mean(axis=1)
+            best_layer_idx = np.argmax(layer_avg_suffix)
+            print(f"\nLayer with Highest Average Suffix Attention:")
+            print(f"  Layer {best_layer_idx}: {layer_avg_suffix[best_layer_idx]:.1%}")
+
+            print("\n" + "="*80)
+
         else:
             print("Skipping comparison: Need at least one Refused and one Complied sample.")
 
-            
     else:
         print("Warning: j_intervened results not found. Skipping granular analysis.")
-    
+
     print("\n✓ COMPLETE!")
 
     # ========================================================================

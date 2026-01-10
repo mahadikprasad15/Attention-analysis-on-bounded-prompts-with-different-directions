@@ -282,6 +282,122 @@ class AttentionAnalyzer:
                 
         return total_scores / len(prompts)
 
+    def get_all_heads_attention_breakdown(
+        self,
+        prompts: List[Prompt],
+        group_name: str = "prompts"
+    ) -> Dict:
+        """
+        Compute attention breakdown for ALL heads across ALL layers.
+        This is the key function for finding which specific heads show attention hijacking.
+
+        For each head in each layer, computes:
+        - % attention to instruction
+        - % attention to adversarial suffix (if present)
+        - % attention to system/template tokens
+
+        Args:
+            prompts: List of prompts to analyze
+            group_name: Name for this group (e.g., "refused" or "complied")
+
+        Returns:
+            {
+                'instruction_attn': [n_layers, n_heads, n_prompts],  # numpy array
+                'suffix_attn': [n_layers, n_heads, n_prompts],       # numpy array
+                'system_attn': [n_layers, n_heads, n_prompts],       # numpy array
+                'user_prefix_attn': [n_layers, n_heads, n_prompts], # numpy array
+                'n_layers': int,
+                'n_heads': int,
+                'n_prompts': int,
+                'group_name': str,
+                'prompts': List[Prompt]
+            }
+        """
+        print(f"\n{'='*80}")
+        print(f"SWEEPING ALL HEADS: {group_name}")
+        print(f"{'='*80}")
+
+        n_layers = self.model.config.num_hidden_layers
+        n_heads = self.model.config.num_attention_heads
+        n_prompts = len(prompts)
+
+        print(f"Model: {n_layers} layers × {n_heads} heads = {n_layers * n_heads} total heads")
+        print(f"Prompts: {n_prompts}")
+        print(f"Total forward passes: {n_prompts} (all heads analyzed per pass)")
+
+        # Initialize storage: [layers, heads, prompts]
+        instruction_attn = np.zeros((n_layers, n_heads, n_prompts))
+        suffix_attn = np.zeros((n_layers, n_heads, n_prompts))
+        user_prefix_attn = np.zeros((n_layers, n_heads, n_prompts))
+        system_attn = np.zeros((n_layers, n_heads, n_prompts))
+
+        # Process each prompt
+        for prompt_idx, prompt in enumerate(tqdm(prompts, desc=f"Analyzing {group_name}")):
+            pos_info = self.formatter.get_positions(prompt)
+
+            # Tokenize and run model
+            inputs = self.tokenizer(
+                prompt.text,
+                return_tensors='pt',
+                add_special_tokens=False
+            ).to(self.model.device)
+
+            with torch.no_grad():
+                outputs = self.model(
+                    **inputs,
+                    output_attentions=True
+                )
+
+            # outputs.attentions is a tuple of [batch, heads, seq_len, seq_len]
+            # We want attention AT t_post (where model starts generating response)
+            t_post_idx = pos_info.t_post
+
+            # Process each layer
+            for layer_idx in range(n_layers):
+                layer_attn = outputs.attentions[layer_idx]  # [1, H, S, S]
+
+                # Get attention from t_post to all tokens: [1, H, S]
+                attn_at_post = layer_attn[0, :, t_post_idx, :]  # [H, S]
+
+                # Process each head separately (NO aggregation!)
+                for head_idx in range(n_heads):
+                    head_attn = attn_at_post[head_idx, :]  # [S]
+
+                    # Calculate attention mass for each region
+                    # Region 1: User prefix (template before instruction)
+                    user_prefix_mass = head_attn[:pos_info.inst_start].sum().item() if pos_info.inst_start > 0 else 0.0
+
+                    # Region 2: Instruction
+                    instr_mass = head_attn[pos_info.inst_start : pos_info.t_inst + 1].sum().item()
+
+                    # Region 3: Adversarial suffix (if present)
+                    suffix_mass = 0.0
+                    if prompt.has_adv:
+                        suffix_mass = head_attn[pos_info.adv_start : pos_info.adv_end + 1].sum().item()
+
+                    # Region 4: System (user_end + assistant_start)
+                    system_mass = 1.0 - user_prefix_mass - instr_mass - suffix_mass
+
+                    # Store results
+                    instruction_attn[layer_idx, head_idx, prompt_idx] = instr_mass
+                    suffix_attn[layer_idx, head_idx, prompt_idx] = suffix_mass
+                    user_prefix_attn[layer_idx, head_idx, prompt_idx] = user_prefix_mass
+                    system_attn[layer_idx, head_idx, prompt_idx] = system_mass
+
+        print(f"\n✓ Completed sweep: {n_layers} layers × {n_heads} heads × {n_prompts} prompts")
+
+        return {
+            'instruction_attn': instruction_attn,
+            'suffix_attn': suffix_attn,
+            'user_prefix_attn': user_prefix_attn,
+            'system_attn': system_attn,
+            'n_layers': n_layers,
+            'n_heads': n_heads,
+            'n_prompts': n_prompts,
+            'group_name': group_name,
+            'prompts': prompts
+        }
+
     def get_specific_head_attention(
         self,
         prompts: List[Prompt],
