@@ -36,6 +36,11 @@ class AttentionProbe(nn.Module):
         """
         # 1. Compute attention scores
         # x: [B, S, D], vector: [D] -> scores: [B, S]
+        
+        # Ensure inputs match weight dtype (e.g. if x is Half and weights are Float)
+        if x.dtype != self.attn_vector.dtype:
+            x = x.to(self.attn_vector.dtype)
+            
         scores = torch.matmul(x, self.attn_vector)
         
         # 2. Masking
