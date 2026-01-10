@@ -449,3 +449,320 @@ class ResultAnalyzer:
         plt.savefig(save_path, dpi=300)
         print(f"✓ Saved probe attention plot to {save_path}")
         plt.close()
+
+    @staticmethod
+    def plot_all_heads_heatmap(
+        sweep_data: Dict,
+        metric: str = 'suffix_attn',
+        save_path: str = 'heads_heatmap.png'
+    ):
+        """
+        Plot heatmap of attention metric across all heads.
+
+        Args:
+            sweep_data: Output from get_all_heads_attention_breakdown()
+            metric: Which metric to plot ('suffix_attn', 'instruction_attn', 'system_attn')
+            save_path: Where to save the plot
+        """
+        import seaborn as sns
+
+        # Get data: [n_layers, n_heads, n_prompts]
+        # Average across prompts to get [n_layers, n_heads]
+        data = sweep_data[metric].mean(axis=2)
+
+        n_layers = sweep_data['n_layers']
+        n_heads = sweep_data['n_heads']
+        group_name = sweep_data['group_name']
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(16, 8))
+
+        # Plot heatmap
+        sns.heatmap(
+            data,
+            cmap='YlOrRd',
+            annot=False,
+            fmt='.1%',
+            cbar_kws={'label': f'Attention Mass'},
+            ax=ax,
+            vmin=0,
+            vmax=data.max()
+        )
+
+        metric_names = {
+            'suffix_attn': 'Adversarial Suffix',
+            'instruction_attn': 'Instruction',
+            'system_attn': 'System/Template',
+            'user_prefix_attn': 'User Prefix'
+        }
+
+        ax.set_title(f'Attention to {metric_names.get(metric, metric)} - {group_name} ({sweep_data["n_prompts"]} prompts)',
+                     fontsize=14, pad=20)
+        ax.set_xlabel('Head Index', fontsize=12)
+        ax.set_ylabel('Layer Index', fontsize=12)
+        ax.set_xticks(np.arange(0, n_heads, 4))
+        ax.set_xticklabels(np.arange(0, n_heads, 4))
+        ax.set_yticks(np.arange(0, n_layers, 2))
+        ax.set_yticklabels(np.arange(0, n_layers, 2))
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"\n✓ Heatmap saved to '{save_path}'")
+        plt.close()
+
+    @staticmethod
+    def plot_top_heads_bar(
+        sweep_data: Dict,
+        metric: str = 'suffix_attn',
+        top_n: int = 20,
+        save_path: str = 'top_heads_bar.png'
+    ):
+        """
+        Plot bar chart of top N heads by attention metric.
+
+        Args:
+            sweep_data: Output from get_all_heads_attention_breakdown()
+            metric: Which metric to rank by
+            top_n: How many top heads to show
+            save_path: Where to save the plot
+        """
+        # Get data and average across prompts
+        data = sweep_data[metric].mean(axis=2)  # [n_layers, n_heads]
+
+        n_layers = sweep_data['n_layers']
+        n_heads = sweep_data['n_heads']
+
+        # Flatten and find top heads
+        flat_data = data.flatten()
+        flat_indices = np.argsort(flat_data)[::-1][:top_n]
+
+        # Convert flat indices to (layer, head) tuples
+        top_heads = []
+        top_values = []
+        for idx in flat_indices:
+            layer = idx // n_heads
+            head = idx % n_heads
+            value = data[layer, head]
+            top_heads.append(f"L{layer}H{head}")
+            top_values.append(value)
+
+        # Create bar plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        colors = plt.cm.YlOrRd(np.linspace(0.3, 0.9, top_n))
+        bars = ax.barh(range(top_n), top_values, color=colors)
+
+        ax.set_yticks(range(top_n))
+        ax.set_yticklabels(top_heads)
+        ax.set_xlabel('Attention Mass', fontsize=12)
+        ax.set_title(f'Top {top_n} Heads by {metric} - {sweep_data["group_name"]}', fontsize=14)
+        ax.invert_yaxis()
+        ax.grid(True, axis='x', alpha=0.3)
+
+        # Add value labels
+        for i, (bar, val) in enumerate(zip(bars, top_values)):
+            ax.text(val, i, f' {val:.1%}', va='center', fontsize=9)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Top heads bar chart saved to '{save_path}'")
+        plt.close()
+
+    @staticmethod
+    def plot_layer_summary(
+        sweep_data: Dict,
+        save_path: str = 'layer_summary.png'
+    ):
+        """
+        Plot layer-wise summary (average across all heads in each layer).
+
+        Args:
+            sweep_data: Output from get_all_heads_attention_breakdown()
+            save_path: Where to save the plot
+        """
+        # Average across heads and prompts: [n_layers, n_heads, n_prompts] -> [n_layers]
+        instruction_by_layer = sweep_data['instruction_attn'].mean(axis=(1, 2))
+        suffix_by_layer = sweep_data['suffix_attn'].mean(axis=(1, 2))
+        system_by_layer = sweep_data['system_attn'].mean(axis=(1, 2))
+        user_prefix_by_layer = sweep_data['user_prefix_attn'].mean(axis=(1, 2))
+
+        # Combine user_prefix and system
+        combined_system = user_prefix_by_layer + system_by_layer
+
+        n_layers = sweep_data['n_layers']
+        layers = np.arange(n_layers)
+
+        # Create stacked bar chart
+        fig, ax = plt.subplots(figsize=(14, 6))
+
+        width = 0.8
+        ax.bar(layers, instruction_by_layer, width, label='Instruction', color='#3498db', alpha=0.8)
+        ax.bar(layers, suffix_by_layer, width, bottom=instruction_by_layer,
+               label='Adv Suffix', color='#e74c3c', alpha=0.8)
+        ax.bar(layers, combined_system, width,
+               bottom=instruction_by_layer + suffix_by_layer,
+               label='System/Template', color='#95a5a6', alpha=0.8)
+
+        ax.set_xlabel('Layer Index', fontsize=12)
+        ax.set_ylabel('Average Attention Mass', fontsize=12)
+        ax.set_title(f'Layer-wise Attention Distribution - {sweep_data["group_name"]}', fontsize=14)
+        ax.legend()
+        ax.set_xticks(np.arange(0, n_layers, 2))
+        ax.grid(True, axis='y', alpha=0.3)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Layer summary saved to '{save_path}'")
+        plt.close()
+
+    @staticmethod
+    def plot_refused_vs_complied_heads(
+        refused_data: Dict,
+        complied_data: Dict,
+        metric: str = 'suffix_attn',
+        save_path: str = 'refused_vs_complied_heads.png'
+    ):
+        """
+        Plot side-by-side heatmaps comparing refused vs complied groups.
+
+        Args:
+            refused_data: Sweep data for refused prompts
+            complied_data: Sweep data for complied prompts
+            metric: Which metric to compare
+            save_path: Where to save the plot
+        """
+        import seaborn as sns
+
+        # Get averaged data
+        refused_avg = refused_data[metric].mean(axis=2)
+        complied_avg = complied_data[metric].mean(axis=2)
+
+        # Create side-by-side heatmaps
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+
+        # Determine shared colorbar range
+        vmax = max(refused_avg.max(), complied_avg.max())
+
+        # Refused heatmap
+        sns.heatmap(
+            refused_avg,
+            cmap='YlOrRd',
+            annot=False,
+            cbar_kws={'label': 'Attention Mass'},
+            ax=ax1,
+            vmin=0,
+            vmax=vmax
+        )
+        ax1.set_title(f'{refused_data["group_name"]} ({refused_data["n_prompts"]} prompts)', fontsize=12)
+        ax1.set_xlabel('Head Index')
+        ax1.set_ylabel('Layer Index')
+
+        # Complied heatmap
+        sns.heatmap(
+            complied_avg,
+            cmap='YlOrRd',
+            annot=False,
+            cbar_kws={'label': 'Attention Mass'},
+            ax=ax2,
+            vmin=0,
+            vmax=vmax
+        )
+        ax2.set_title(f'{complied_data["group_name"]} ({complied_data["n_prompts"]} prompts)', fontsize=12)
+        ax2.set_xlabel('Head Index')
+        ax2.set_ylabel('Layer Index')
+
+        metric_names = {
+            'suffix_attn': 'Adversarial Suffix Attention',
+            'instruction_attn': 'Instruction Attention',
+            'system_attn': 'System Attention'
+        }
+
+        fig.suptitle(f'{metric_names.get(metric, metric)}: Comparison', fontsize=16, y=0.98)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✓ Comparison heatmap saved to '{save_path}'")
+        plt.close()
+
+    @staticmethod
+    def create_head_sweep_report(
+        refused_data: Dict,
+        complied_data: Dict,
+        save_dir: str
+    ):
+        """
+        Create a comprehensive report of all head-level visualizations.
+
+        Args:
+            refused_data: Sweep data for refused prompts
+            complied_data: Sweep data for complied prompts
+            save_dir: Directory to save all plots
+        """
+        import os
+
+        print("\n" + "="*80)
+        print("GENERATING HEAD SWEEP VISUALIZATIONS")
+        print("="*80)
+
+        # 1. Suffix attention heatmaps
+        ResultAnalyzer.plot_all_heads_heatmap(
+            complied_data,
+            'suffix_attn',
+            os.path.join(save_dir, 'heads_suffix_heatmap_complied.png')
+        )
+
+        ResultAnalyzer.plot_all_heads_heatmap(
+            refused_data,
+            'suffix_attn',
+            os.path.join(save_dir, 'heads_suffix_heatmap_refused.png')
+        )
+
+        # 2. Instruction attention heatmaps
+        ResultAnalyzer.plot_all_heads_heatmap(
+            complied_data,
+            'instruction_attn',
+            os.path.join(save_dir, 'heads_instruction_heatmap_complied.png')
+        )
+
+        ResultAnalyzer.plot_all_heads_heatmap(
+            refused_data,
+            'instruction_attn',
+            os.path.join(save_dir, 'heads_instruction_heatmap_refused.png')
+        )
+
+        # 3. Top heads by suffix attention
+        ResultAnalyzer.plot_top_heads_bar(
+            complied_data,
+            'suffix_attn',
+            top_n=20,
+            save_path=os.path.join(save_dir, 'top20_suffix_heads_complied.png')
+        )
+
+        # 4. Layer-wise summaries
+        ResultAnalyzer.plot_layer_summary(
+            refused_data,
+            os.path.join(save_dir, 'layer_summary_refused.png')
+        )
+
+        ResultAnalyzer.plot_layer_summary(
+            complied_data,
+            os.path.join(save_dir, 'layer_summary_complied.png')
+        )
+
+        # 5. Comparison heatmaps
+        ResultAnalyzer.plot_refused_vs_complied_heads(
+            refused_data,
+            complied_data,
+            'suffix_attn',
+            os.path.join(save_dir, 'comparison_suffix_heads.png')
+        )
+
+        ResultAnalyzer.plot_refused_vs_complied_heads(
+            refused_data,
+            complied_data,
+            'instruction_attn',
+            os.path.join(save_dir, 'comparison_instruction_heads.png')
+        )
+
+        print("\n✓ All head sweep visualizations generated!")
+        print("="*80)
