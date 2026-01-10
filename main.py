@@ -589,11 +589,23 @@ def main():
             tokens = tokens[:min_len]
             weights_np = weights_np[:min_len]
             
+
+            
+        pos_info = formatter.get_positions(prompt)
+        # pos_info is a dataclass, convert to dict for visualization
+        pos_dict = {
+            't_inst': pos_info.t_inst,
+            'adv_start': pos_info.adv_start,
+            'adv_end': pos_info.adv_end,
+            't_post': pos_info.t_post
+        }
+            
         analyzer.plot_probe_attention(
             tokens,
             weights_np,
             title=f"Learned Attention: {case['desc']} (p={prob:.2f})",
-            save_path=os.path.join(args.save_dir, f"learned_attn_case_{i+1}.png")
+            save_path=os.path.join(args.save_dir, f"learned_attn_case_{i+1}.png"),
+            pos_info=pos_dict
         )
     
     print("\n✓ COMPLETE!")

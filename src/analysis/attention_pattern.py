@@ -323,7 +323,13 @@ class AttentionAnalyzer:
                 'tokens': tokens,
                 'attention': attn_grid,
                 'instruction': prompt.instruction,
-                'has_adv': prompt.has_adv
+                'has_adv': prompt.has_adv,
+                'pos_info': {
+                    't_inst': pos_info.t_inst,
+                    't_post': pos_info.t_post,
+                    'adv_start': pos_info.adv_start,
+                    'adv_end': pos_info.adv_end
+                }
             })
             
         return results

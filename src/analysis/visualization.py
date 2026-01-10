@@ -323,13 +323,32 @@ class ResultAnalyzer:
             annot=False
         )
         
+        if 'pos_info' in detailed_attention:
+            pos = detailed_attention['pos_info']
+            # Draw vertical/horizontal lines
+            # t_inst: End of instruction
+            if pos['t_inst']:
+                idx = pos['t_inst']
+                plt.axvline(x=idx + 0.5, color='white', linestyle='--', alpha=0.5, linewidth=1)
+                plt.axhline(y=idx + 0.5, color='white', linestyle='--', alpha=0.5, linewidth=1)
+                
+            # Adv Suffix Region
+            if pos.get('adv_start') and pos.get('adv_end'):
+                start = pos['adv_start']
+                end = pos['adv_end']
+                
+                # Highlight suffix area on axes
+                # We can draw a box or just lines
+                plt.axvline(x=start, color='red', linestyle=':', alpha=0.5)
+                plt.axvline(x=end + 1, color='red', linestyle=':', alpha=0.5)
+                plt.axhline(y=start, color='red', linestyle=':', alpha=0.5)
+                plt.axhline(y=end + 1, color='red', linestyle=':', alpha=0.5)
+                
         plt.title(title)
         plt.xticks(rotation=90, fontsize=8)
         plt.yticks(rotation=0, fontsize=8)
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
-        print(f"✓ Saved attention grid to {save_path}")
-        plt.close()
         print(f"✓ Saved attention grid to {save_path}")
         plt.close()
 
@@ -338,7 +357,8 @@ class ResultAnalyzer:
         tokens: List[str],
         attention_weights: np.ndarray,
         title: str,
-        save_path: str
+        save_path: str,
+        pos_info: Dict = None
     ):
         """
         Plot learned attention weights from AttentionProbe as a bar chart/heatmap.
@@ -360,6 +380,28 @@ class ResultAnalyzer:
             cbar_kws={"label": "Attention Weight"}
         )
         
+        # Add region markers
+        if pos_info:
+            # t_inst
+            if pos_info.get('t_inst'):
+                plt.axvline(x=pos_info['t_inst'] + 0.5, color='blue', linestyle='--', label='Inst End')
+                
+            # Adv Suffix
+            if pos_info.get('adv_start') and pos_info.get('adv_end'):
+                # Draw shaded region
+                plt.axvspan(
+                    pos_info['adv_start'], 
+                    pos_info['adv_end'] + 1, 
+                    color='red', alpha=0.1, label='Suffix'
+                )
+            
+            # t_post (last token)
+            # usually implied by end of plot, but let's check
+            # if t_post < len(tokens)-1: mark it?
+            pass
+            
+            plt.legend(loc='upper right', fontsize='small')
+
         plt.title(title)
         plt.xticks(rotation=45, ha='right', fontsize=8)
         plt.tight_layout()
