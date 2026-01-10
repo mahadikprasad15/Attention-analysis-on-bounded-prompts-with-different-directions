@@ -259,6 +259,10 @@ class AttentionAnalyzer:
                 # This projection only needs to be computed ONCE per layer (weights static).
                 # But inside loop is fine for now or we cache it.
                 # Let's compute it here.
+
+                # Cast refusal_direction to match model weights (e.g. Float16) if needed
+                if refusal_direction.dtype != W_O_reshaped.dtype:
+                    refusal_direction = refusal_direction.to(W_O_reshaped.dtype)
                 
                 effective_dir = torch.einsum('d, dnh -> nh', refusal_direction, W_O_reshaped)
                 
