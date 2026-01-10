@@ -31,7 +31,8 @@ class AttentionAnalyzer:
         results = {
             'instruction_attn': [],
             'suffix_attn': [],
-            'system_attn': [] # Everything else (user_start, etc)
+            'system_attn': [],  # Template tokens and other system tokens
+            'user_prefix_attn': []  # user_start template tokens
         }
         
         for i, prompt in enumerate(tqdm(prompts)):
@@ -69,27 +70,31 @@ class AttentionAnalyzer:
             # We want to see total attention mass regardless of specific head specialization for now
             avg_attn = attn_at_post.mean(dim=0) # [S]
             
-            # Sum masses for regions
-            # 1. Instruction: [0 ... t_inst] (Rough approximation, might include start tokens)
-            # Better: use explicit start if possible, but for now 0 to t_inst is "Instruction + Prefix"
-            # Actually, let's try to be precise if we can. 
-            # pos_info doesn't store start, but we can assume instruction starts after user_start.
-            # But simpler: Instruction Mass = sum(0..t_inst) - (actually t_inst is INCLUSIVE final token of instr)
-            
-            # If suffix exists:
-            # Suffix Mass = sum(adv_start .. adv_end)
-            
-            instr_mass = avg_attn[:pos_info.t_inst + 1].sum().item()
-            
+            # Sum masses for regions with CORRECT boundaries
+            # 1. User prefix (template): [0 ... inst_start-1]
+            # 2. Instruction: [inst_start ... t_inst]
+            # 3. Adversarial suffix: [adv_start ... adv_end] (if present)
+            # 4. System/Other: Everything else (user_end, assistant_start)
+
+            # User prefix (template tokens like <|start_header_id|>user<|end_header_id|>)
+            user_prefix_mass = avg_attn[:pos_info.inst_start].sum().item() if pos_info.inst_start > 0 else 0.0
+
+            # Instruction (actual instruction text only)
+            instr_mass = avg_attn[pos_info.inst_start : pos_info.t_inst + 1].sum().item()
+
+            # Adversarial suffix (if present)
             suffix_mass = 0.0
             if prompt.has_adv:
                 suffix_mass = avg_attn[pos_info.adv_start : pos_info.adv_end + 1].sum().item()
-            
+
+            # System/Other is the rest (user_end, assistant_start)
+            system_mass = 1.0 - user_prefix_mass - instr_mass - suffix_mass
+
             # Update results
             results['instruction_attn'].append(instr_mass)
             results['suffix_attn'].append(suffix_mass)
-            # System/Other is the rest (mostly special tokens)
-            results['system_attn'].append(1.0 - instr_mass - suffix_mass)
+            results['user_prefix_attn'].append(user_prefix_mass)
+            results['system_attn'].append(system_mass)
             
         return results
 

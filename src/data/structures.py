@@ -16,11 +16,12 @@ class Prompt:
 @dataclass
 class TokenPositions:
     """Token positions in a prompt"""
-    t_inst: int          # End of instruction
+    t_inst: int          # End of instruction (for harmfulness probe)
     t_post: int          # End of template (before generation)
+    inst_start: int = 0  # Start of instruction (after user_start template)
     adv_start: Optional[int] = None  # Start of adversarial suffix
     adv_end: Optional[int] = None    # End of adversarial suffix
     total_length: int = 0
-    
+
     def has_adversarial(self) -> bool:
         return self.adv_start is not None

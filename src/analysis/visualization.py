@@ -118,62 +118,91 @@ class ResultAnalyzer:
     def plot_attention_contributions(results: Dict[str, List[float]], save_path: str = 'attention_analysis.png'):
         """
         Plot distribution of attention mass (Instruction vs Suffix vs System)
-        
+
         Args:
-            results: Dictionary with keys 'instruction_attn', 'suffix_attn', 'system_attn'
+            results: Dictionary with keys 'instruction_attn', 'suffix_attn', 'system_attn', 'user_prefix_attn'
                      containing lists of float values (one per sample)
             save_path: Path to save plot
         """
         # Calculate means and stds
         means = {k: np.mean(v) for k, v in results.items()}
         stds = {k: np.std(v) for k, v in results.items()}
-        
-        labels = ['Instruction', 'Adv Suffix', 'System/Other']
-        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
-        
+
+        # Combine user_prefix_attn and system_attn into a single "System/Template" category
+        if 'user_prefix_attn' in results:
+            combined_system = [u + s for u, s in zip(results['user_prefix_attn'], results['system_attn'])]
+            means['combined_system'] = np.mean(combined_system)
+            stds['combined_system'] = np.std(combined_system)
+        else:
+            combined_system = results['system_attn']
+            means['combined_system'] = means['system_attn']
+            stds['combined_system'] = stds['system_attn']
+
+        labels = ['Instruction', 'Adv Suffix', 'System/Template']
+        keys = ['instruction_attn', 'suffix_attn', 'combined_system']
+
         vals = [means[k] for k in keys]
         errs = [stds[k] for k in keys]
-        
+
         fig, ax = plt.subplots(figsize=(8, 6))
-        
+
         x = np.arange(len(labels))
         bars = ax.bar(x, vals, yerr=errs, capsize=5, alpha=0.8, color=['#3498db', '#e74c3c', '#95a5a6'])
-        
+
         ax.set_ylabel('Average Attention Mass at t_post')
         ax.set_title('Attention Distribution (Jailbreak Condition)')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.grid(True, axis='y', alpha=0.3)
-        
+
         # Add labels
         for bar in bars:
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width()/2., height,
                     f'{height:.2%}',
                     ha='center', va='bottom')
-            
+
         plt.tight_layout()
         plt.savefig(save_path, dpi=300)
         print(f"\n✓ Attention Plot saved to '{save_path}'")
 
     @staticmethod
     def plot_attention_breakdown_comparison(
-        refused_results: Dict[str, List[float]], 
-        complied_results: Dict[str, List[float]], 
+        refused_results: Dict[str, List[float]],
+        complied_results: Dict[str, List[float]],
         save_path: str = 'attention_breakdown_comparison.png'
     ):
         """
         Plot side-by-side comparison of attention patterns for Refused vs Complied groups.
         """
-        labels = ['Instruction', 'Adv Suffix', 'System/Other']
-        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
-        
+        labels = ['Instruction', 'Adv Suffix', 'System/Template']
+
+        # Combine user_prefix and system for both groups
+        def combine_system(results):
+            if 'user_prefix_attn' in results:
+                return [u + s for u, s in zip(results['user_prefix_attn'], results['system_attn'])]
+            return results['system_attn']
+
+        ref_combined = {
+            'instruction_attn': refused_results['instruction_attn'],
+            'suffix_attn': refused_results['suffix_attn'],
+            'combined_system': combine_system(refused_results)
+        }
+
+        comp_combined = {
+            'instruction_attn': complied_results['instruction_attn'],
+            'suffix_attn': complied_results['suffix_attn'],
+            'combined_system': combine_system(complied_results)
+        }
+
+        keys = ['instruction_attn', 'suffix_attn', 'combined_system']
+
         # Prepare data
-        ref_means = [np.mean(refused_results[k]) for k in keys]
-        ref_stds = [np.std(refused_results[k]) for k in keys]
-        
-        comp_means = [np.mean(complied_results[k]) for k in keys]
-        comp_stds = [np.std(complied_results[k]) for k in keys]
+        ref_means = [np.mean(ref_combined[k]) for k in keys]
+        ref_stds = [np.std(ref_combined[k]) for k in keys]
+
+        comp_means = [np.mean(comp_combined[k]) for k in keys]
+        comp_stds = [np.std(comp_combined[k]) for k in keys]
         
         x = np.arange(len(labels))
         width = 0.35
@@ -181,11 +210,11 @@ class ResultAnalyzer:
         fig, ax = plt.subplots(figsize=(10, 6))
         
         # Bars
-        rects1 = ax.bar(x - width/2, ref_means, width, yerr=ref_stds, label='Refused (Success)', capsize=5, alpha=0.8, color='#2ecc71')
-        rects2 = ax.bar(x + width/2, comp_means, width, yerr=comp_stds, label='Complied (Failed)', capsize=5, alpha=0.8, color='#e74c3c')
-        
+        rects1 = ax.bar(x - width/2, ref_means, width, yerr=ref_stds, label='Clean Refused (No Suffix)', capsize=5, alpha=0.8, color='#2ecc71')
+        rects2 = ax.bar(x + width/2, comp_means, width, yerr=comp_stds, label='Jailbreak Complied (With Suffix)', capsize=5, alpha=0.8, color='#e74c3c')
+
         ax.set_ylabel('Attention Mass at t_post')
-        ax.set_title('Attention Distribution: Refused vs Complied (Top 3)')
+        ax.set_title('Attention Distribution: Clean Refused vs Jailbreak Complied (Top 3)')
         ax.set_xticks(x)
         ax.set_xticklabels(labels)
         ax.legend()
@@ -211,7 +240,7 @@ class ResultAnalyzer:
 
     @staticmethod
     def plot_individual_samples(
-        results: Dict[str, List[float]], 
+        results: Dict[str, List[float]],
         group_name: str,
         save_path: str
     ):
@@ -220,17 +249,29 @@ class ResultAnalyzer:
         Creates a figure with N subplots (where N is number of samples in results).
         """
         n_samples = len(results['instruction_attn'])
-        labels = ['Instruction', 'Adv Suffix', 'System']
-        keys = ['instruction_attn', 'suffix_attn', 'system_attn']
+        labels = ['Instruction', 'Adv Suffix', 'System/Template']
         colors = ['#3498db', '#e74c3c', '#95a5a6']
-        
+
+        # Combine user_prefix and system for each sample
+        if 'user_prefix_attn' in results:
+            combined_system = [u + s for u, s in zip(results['user_prefix_attn'], results['system_attn'])]
+        else:
+            combined_system = results['system_attn']
+
+        keys = ['instruction_attn', 'suffix_attn', 'combined_system']
+        combined_results = {
+            'instruction_attn': results['instruction_attn'],
+            'suffix_attn': results['suffix_attn'],
+            'combined_system': combined_system
+        }
+
         fig, axes = plt.subplots(1, n_samples, figsize=(5 * n_samples, 5))
         if n_samples == 1:
             axes = [axes]
-            
+
         for i in range(n_samples):
             ax = axes[i]
-            vals = [results[k][i] for k in keys]
+            vals = [combined_results[k][i] for k in keys]
             
             x = np.arange(len(labels))
             bars = ax.bar(x, vals, color=colors, alpha=0.8)
